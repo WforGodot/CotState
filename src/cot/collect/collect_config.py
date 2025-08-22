@@ -27,11 +27,11 @@ LAYERS = [0, 1, 4, 8, 12]
 # -----------------------------
 # How many rows to use from each regime (we take the first N after filtering).
 REGIME_SAMPLE_COUNTS = {
-    "i_initial": 5,
+    "i_initial": 100,
     "ii_inconsequential": 0,
-    "iii_derived": 5,
+    "iii_derived": 100,
     "iv_indeterminate": 0,   # usually you’ll keep this 0; they have p_value="Unknown"
-    "v_output": 5,
+    "v_output": 100,
 }
 
 # How many tokens to keep AFTER the split point (per regime).
