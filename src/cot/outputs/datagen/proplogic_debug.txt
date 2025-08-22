@@ -1,0 +1,147 @@
+=== i_initial ===
+You are given a small propositional logic system.
+Initially: P is False.
+Rules:
+- B = (not W) AND (not P).
+- C = (not E) AND (P).
+- E = (not B) AND (not W).
+- W = not P.
+Question: What is the truth value of C? Answer 'True' or 'False'.
+Gold answer: False
+Declared categories:
+  initial:        ['P']
+  useful(used):   ['B', 'E', 'W']
+  useless(unused):[]
+  indeterminate:  ['G', 'X']
+  output_var:     C
+Observed minimal support path to output:
+  minimal_support:['B', 'C', 'E', 'P', 'W']
+
+COT (gold):
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is || false.
+Right away, P is false.
+Given that P is false, and because W matches not P, it follows that W is true.
+Given that P is false, and W is true, and because B is true only when both not W and not P are true, it follows that B is false.
+Given that B is false, and W is true, and because E is true only when both not B and not W are true, it follows that E is false.
+Given that E is false, and P is false, and because C is true only when both not E and P are true, it follows that C is false.
+In the end, C is false.
+(P becomes determinate at char index 102, value=False)
+
+=== ii_inconsequential ===
+You are given a small propositional logic system.
+Initially: C is False; P is True; X is True.
+Rules:
+- I = not C.
+- Z = (O) AND (X).
+- Y = C.
+- O = not I.
+Question: What is the truth value of Z? Answer 'True' or 'False'.
+Gold answer: False
+Declared categories:
+  initial:        ['C', 'P', 'X']
+  useful(used):   ['I', 'O']
+  useless(unused):['Y']
+  indeterminate:  ['Q', 'W']
+  output_var:     Z
+Observed minimal support path to output:
+  minimal_support:['C', 'I', 'O', 'X', 'Z']
+
+COT (gold):
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, C is false, P is || true, X is true.
+Right away, P is true.
+Given that C is false, and because I matches not C, it follows that I is true.
+Given that C is false, and because Y matches C, it follows that Y is false.
+Given that I is true, and because O matches not I, it follows that O is false.
+Given that O is false, and X is true, and because Z is true only when both O and X are true, it follows that Z is false.
+In the end, Z is false.
+(P becomes determinate at char index 114, value=True)
+
+=== iii_derived ===
+You are given a small propositional logic system.
+Initially: W is True.
+Rules:
+- H = not Q.
+- S = not W.
+- Q = not P.
+- P = (W) AND (not S).
+Question: What is the truth value of Q? Answer 'True' or 'False'.
+Gold answer: False
+Declared categories:
+  initial:        ['W']
+  useful(used):   ['P', 'S']
+  useless(unused):['H']
+  indeterminate:  ['E']
+  output_var:     Q
+Observed minimal support path to output:
+  minimal_support:['P', 'Q', 'S', 'W']
+
+COT (gold):
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, W is true.
+Given that W is true, and because S matches not W, it follows that S is false.
+Given that S is false, and W is true, and because P is || true only when both W and not S are true, it follows that P is true.
+Given that P is true, and because Q matches not P, it follows that Q is false.
+Given that Q is false, and because H matches not Q, it follows that H is true.
+In the end, Q is false.
+(P becomes determinate at char index 242, value=True)
+
+=== iv_indeterminate ===
+You are given a small propositional logic system.
+Initially: B is False; O is True.
+Rules:
+- L = I.
+- I = not B.
+- V = (O) AND (not M).
+- M = not L.
+Question: What is the truth value of V? Answer 'True' or 'False'.
+Gold answer: True
+Declared categories:
+  initial:        ['B', 'O']
+  useful(used):   ['I', 'L', 'M']
+  useless(unused):[]
+  indeterminate:  ['P']
+  output_var:     V
+Observed minimal support path to output:
+  minimal_support:['B', 'I', 'L', 'M', 'O', 'V']
+
+COT (gold):
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, B is false, O is true.
+Given that B is false, and because I matches not B, it follows that I is true.
+Given that I is true, and because L matches I, it follows that L is true.
+Given that L is true, and because M matches not L, it follows that M is false.
+Given that M is false, and O is true, and because V is true only when both O and not M are true, it follows that V is true.
+In the end, V is true.
+(P remains indeterminate in this instance)
+
+=== v_output ===
+You are given a small propositional logic system.
+Initially: F is True; I is False.
+Rules:
+- C = (not I) AND (not F).
+- P = (not X) AND (not F).
+- Y = C.
+- X = (not F) AND (not C).
+Question: What is the truth value of P? Answer 'True' or 'False'.
+Gold answer: False
+Declared categories:
+  initial:        ['F', 'I']
+  useful(used):   ['C', 'X']
+  useless(unused):['Y']
+  indeterminate:  ['U']
+  output_var:     P
+Observed minimal support path to output:
+  minimal_support:['C', 'F', 'I', 'P', 'X']
+
+COT (gold):
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, F is true, I is false.
+Given that F is true, and I is false, and because C is true only when both not I and not F are true, it follows that C is false.
+Given that C is false, and because Y matches C, it follows that Y is false.
+Given that C is false, and F is true, and because X is true only when both not F and not C are true, it follows that X is false.
+Given that F is true, and X is false, and because P is true only when both not X and not F are true, it follows that P is || false.
+In the end, P is false.
+(P becomes determinate at char index 576, value=False)
+

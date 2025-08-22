@@ -1,0 +1,377 @@
+id,regime,question,answer,cot,p_char_index,p_value
+0,i_initial,"You are given a small propositional logic system.
+Initially: P is False.
+Rules:
+- B = (not W) AND (not P).
+- C = (not E) AND (P).
+- E = (not B) AND (not W).
+- W = not P.
+Question: What is the truth value of C? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is false.
+Right away, P is false.
+Given that P is false, and because W matches not P, it follows that W is true.
+Given that P is false, and W is true, and because B is true only when both not W and not P are true, it follows that B is false.
+Given that B is false, and W is true, and because E is true only when both not B and not W are true, it follows that E is false.
+Given that E is false, and P is false, and because C is true only when both not E and P are true, it follows that C is false.
+In the end, C is false.",102,False
+1,i_initial,"You are given a small propositional logic system.
+Initially: N is False; P is False.
+Rules:
+- D = not P.
+- Q = (not V) AND (N).
+- V = not N.
+- C = (D) AND (not Q).
+Question: What is the truth value of C? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, N is false, P is false.
+Right away, P is false.
+Given that P is false, and because D matches not P, it follows that D is true.
+Given that N is false, and because V matches not N, it follows that V is true.
+Given that N is false, and V is true, and because Q is true only when both not V and N are true, it follows that Q is false.
+Given that D is true, and Q is false, and because C is true only when both D and not Q are true, it follows that C is true.
+In the end, C is true.",114,False
+2,i_initial,"You are given a small propositional logic system.
+Initially: P is False.
+Rules:
+- Y = (C) AND (P).
+- C = P.
+- A = Y.
+- N = Y.
+Question: What is the truth value of A? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is false.
+Right away, P is false.
+Given that P is false, and because C matches P, it follows that C is false.
+Given that C is false, and P is false, and because Y is true only when both C and P are true, it follows that Y is false.
+Given that Y is false, and because A matches Y, it follows that A is false.
+Given that Y is false, and because N matches Y, it follows that N is false.
+In the end, A is false.",102,False
+3,i_initial,"You are given a small propositional logic system.
+Initially: P is True.
+Rules:
+- H = not P.
+- B = not J.
+- J = (H) AND (not P).
+Question: What is the truth value of B? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is true.
+Right away, P is true.
+Given that P is true, and because H matches not P, it follows that H is false.
+Given that H is false, and P is true, and because J is true only when both H and not P are true, it follows that J is false.
+Given that J is false, and because B matches not J, it follows that B is true.
+In the end, B is true.",102,True
+4,i_initial,"You are given a small propositional logic system.
+Initially: P is True.
+Rules:
+- F = (not V) AND (not L).
+- L = P.
+- A = V.
+- V = (L) AND (P).
+Question: What is the truth value of F? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is true.
+Right away, P is true.
+Given that P is true, and because L matches P, it follows that L is true.
+Given that L is true, and P is true, and because V is true only when both L and P are true, it follows that V is true.
+Given that L is true, and V is true, and because F is true only when both not V and not L are true, it follows that F is false.
+Given that V is true, and because A matches V, it follows that A is true.
+In the end, F is false.",102,True
+5,ii_inconsequential,"You are given a small propositional logic system.
+Initially: C is False; P is True; X is True.
+Rules:
+- I = not C.
+- Z = (O) AND (X).
+- Y = C.
+- O = not I.
+Question: What is the truth value of Z? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, C is false, P is true, X is true.
+Right away, P is true.
+Given that C is false, and because I matches not C, it follows that I is true.
+Given that C is false, and because Y matches C, it follows that Y is false.
+Given that I is true, and because O matches not I, it follows that O is false.
+Given that O is false, and X is true, and because Z is true only when both O and X are true, it follows that Z is false.
+In the end, Z is false.",114,True
+6,ii_inconsequential,"You are given a small propositional logic system.
+Initially: M is True; P is True.
+Rules:
+- O = not C.
+- T = M.
+- D = (C) AND (not M).
+- C = not M.
+- A = not C.
+- E = (O) AND (not D).
+Question: What is the truth value of E? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, M is true, P is true.
+Right away, P is true.
+Given that M is true, and because T matches M, it follows that T is true.
+Given that M is true, and because C matches not M, it follows that C is false.
+Given that C is false, and because A matches not C, it follows that A is true.
+Given that C is false, and because O matches not C, it follows that O is true.
+Given that C is false, and M is true, and because D is true only when both C and not M are true, it follows that D is false.
+Given that D is false, and O is true, and because E is true only when both O and not D are true, it follows that E is true.
+In the end, E is true.",113,True
+7,ii_inconsequential,"You are given a small propositional logic system.
+Initially: P is True; S is False.
+Rules:
+- Y = S.
+- R = (Y) AND (not T).
+- T = not S.
+Question: What is the truth value of R? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is true, S is false.
+Right away, P is true.
+Given that S is false, and because Y matches S, it follows that Y is false.
+Given that S is false, and because T matches not S, it follows that T is true.
+Given that T is true, and Y is false, and because R is true only when both Y and not T are true, it follows that R is false.
+In the end, R is false.",102,True
+8,ii_inconsequential,"You are given a small propositional logic system.
+Initially: C is False; P is True; Z is True.
+Rules:
+- L = C.
+- O = Z.
+- F = not G.
+- K = O.
+- G = (not L) AND (O).
+- X = (G) AND (not Z).
+Question: What is the truth value of X? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, C is false, P is true, Z is true.
+Right away, P is true.
+Given that C is false, and because L matches C, it follows that L is false.
+Given that Z is true, and because O matches Z, it follows that O is true.
+Given that O is true, and because K matches O, it follows that K is true.
+Given that L is false, and O is true, and because G is true only when both not L and O are true, it follows that G is true.
+Given that G is true, and Z is true, and because X is true only when both G and not Z are true, it follows that X is false.
+Given that G is true, and because F matches not G, it follows that F is false.
+In the end, X is false.",114,True
+9,ii_inconsequential,"You are given a small propositional logic system.
+Initially: K is False; P is False; Z is False.
+Rules:
+- J = (not Z) AND (K).
+- Y = J.
+- U = (Y) AND (not K).
+Question: What is the truth value of U? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, K is false, P is false, Z is false.
+Right away, P is false.
+Given that K is false, and Z is false, and because J is true only when both not Z and K are true, it follows that J is false.
+Given that J is false, and because Y matches J, it follows that Y is false.
+Given that K is false, and Y is false, and because U is true only when both Y and not K are true, it follows that U is false.
+In the end, U is false.",114,False
+10,iii_derived,"You are given a small propositional logic system.
+Initially: W is True.
+Rules:
+- H = not Q.
+- S = not W.
+- Q = not P.
+- P = (W) AND (not S).
+Question: What is the truth value of Q? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, W is true.
+Given that W is true, and because S matches not W, it follows that S is false.
+Given that S is false, and W is true, and because P is true only when both W and not S are true, it follows that P is true.
+Given that P is true, and because Q matches not P, it follows that Q is false.
+Given that Q is false, and because H matches not Q, it follows that H is true.
+In the end, Q is false.",242,True
+11,iii_derived,"You are given a small propositional logic system.
+Initially: D is True; V is False; W is False.
+Rules:
+- Y = not W.
+- C = V.
+- P = (C) AND (not W).
+- X = (D) AND (not P).
+Question: What is the truth value of X? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, D is true, V is false, W is false.
+Given that W is false, and because Y matches not W, it follows that Y is true.
+Given that V is false, and because C matches V, it follows that C is false.
+Given that C is false, and W is false, and because P is true only when both C and not W are true, it follows that P is false.
+Given that D is true, and P is false, and because X is true only when both D and not P are true, it follows that X is true.
+In the end, X is true.",406,False
+12,iii_derived,"You are given a small propositional logic system.
+Initially: G is False; N is False.
+Rules:
+- E = not G.
+- V = not P.
+- H = not E.
+- R = (not G) AND (not N).
+- P = (E) AND (R).
+- B = (P) AND (not N).
+Question: What is the truth value of B? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, G is false, N is false.
+Given that G is false, and because E matches not G, it follows that E is true.
+Given that E is true, and because H matches not E, it follows that H is false.
+Given that G is false, and N is false, and because R is true only when both not G and not N are true, it follows that R is true.
+Given that E is true, and R is true, and because P is true only when both E and R are true, it follows that P is true.
+Given that N is false, and P is true, and because B is true only when both P and not N are true, it follows that B is true.
+Given that P is true, and because V matches not P, it follows that V is false.
+In the end, B is true.",462,True
+13,iii_derived,"You are given a small propositional logic system.
+Initially: M is True; O is True.
+Rules:
+- P = (O) AND (not M).
+- A = (X) AND (P).
+- X = (not O) AND (M).
+Question: What is the truth value of A? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, M is true, O is true.
+Given that M is true, and O is true, and because P is true only when both O and not M are true, it follows that P is false.
+Given that M is true, and O is true, and because X is true only when both not O and M are true, it follows that X is false.
+Given that P is false, and X is false, and because A is true only when both X and P are true, it follows that A is false.
+In the end, A is false.",236,False
+14,iii_derived,"You are given a small propositional logic system.
+Initially: R is True.
+Rules:
+- Z = (S) AND (not Q).
+- Q = (not P) AND (R).
+- S = not R.
+- P = not R.
+Question: What is the truth value of Z? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, R is true.
+Given that R is true, and because S matches not R, it follows that S is false.
+Given that R is true, and because P matches not R, it follows that P is false.
+Given that P is false, and R is true, and because Q is true only when both not P and R are true, it follows that Q is true.
+Given that Q is true, and S is false, and because Z is true only when both S and not Q are true, it follows that Z is false.
+In the end, Z is false.",259,False
+15,iv_indeterminate,"You are given a small propositional logic system.
+Initially: B is False; O is True.
+Rules:
+- L = I.
+- I = not B.
+- V = (O) AND (not M).
+- M = not L.
+Question: What is the truth value of V? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, B is false, O is true.
+Given that B is false, and because I matches not B, it follows that I is true.
+Given that I is true, and because L matches I, it follows that L is true.
+Given that L is true, and because M matches not L, it follows that M is false.
+Given that M is false, and O is true, and because V is true only when both O and not M are true, it follows that V is true.
+In the end, V is true.",,Unknown
+16,iv_indeterminate,"You are given a small propositional logic system.
+Initially: W is True.
+Rules:
+- M = O.
+- O = (W) AND (L).
+- L = W.
+- C = (not O) AND (not W).
+- Z = not O.
+Question: What is the truth value of C? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, W is true.
+Given that W is true, and because L matches W, it follows that L is true.
+Given that L is true, and W is true, and because O is true only when both W and L are true, it follows that O is true.
+Given that O is true, and W is true, and because C is true only when both not O and not W are true, it follows that C is false.
+Given that O is true, and because Z matches not O, it follows that Z is false.
+Given that O is true, and because M matches O, it follows that M is true.
+In the end, C is false.",,Unknown
+17,iv_indeterminate,"You are given a small propositional logic system.
+Initially: S is True.
+Rules:
+- N = not C.
+- J = (S) AND (not C).
+- F = not J.
+- C = not S.
+- Z = J.
+Question: What is the truth value of F? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, S is true.
+Given that S is true, and because C matches not S, it follows that C is false.
+Given that C is false, and because N matches not C, it follows that N is true.
+Given that C is false, and S is true, and because J is true only when both S and not C are true, it follows that J is true.
+Given that J is true, and because F matches not J, it follows that F is false.
+Given that J is true, and because Z matches J, it follows that Z is true.
+In the end, F is false.",,Unknown
+18,iv_indeterminate,"You are given a small propositional logic system.
+Initially: G is False; O is False; R is True.
+Rules:
+- W = not F.
+- X = F.
+- F = (not R) AND (G).
+- J = (X) AND (O).
+- B = not X.
+Question: What is the truth value of J? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, G is false, O is false, R is true.
+Given that G is false, and R is true, and because F is true only when both not R and G are true, it follows that F is false.
+Given that F is false, and because W matches not F, it follows that W is true.
+Given that F is false, and because X matches F, it follows that X is false.
+Given that O is false, and X is false, and because J is true only when both X and O are true, it follows that J is false.
+Given that X is false, and because B matches not X, it follows that B is true.
+In the end, J is false.",,Unknown
+19,iv_indeterminate,"You are given a small propositional logic system.
+Initially: R is False.
+Rules:
+- T = not R.
+- A = not G.
+- X = not G.
+- S = (not T) AND (G).
+- G = not T.
+Question: What is the truth value of S? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, R is false.
+Given that R is false, and because T matches not R, it follows that T is true.
+Given that T is true, and because G matches not T, it follows that G is false.
+Given that G is false, and because A matches not G, it follows that A is true.
+Given that G is false, and because X matches not G, it follows that X is true.
+Given that G is false, and T is true, and because S is true only when both not T and G are true, it follows that S is false.
+In the end, S is false.",,Unknown
+20,v_output,"You are given a small propositional logic system.
+Initially: F is True; I is False.
+Rules:
+- C = (not I) AND (not F).
+- P = (not X) AND (not F).
+- Y = C.
+- X = (not F) AND (not C).
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, F is true, I is false.
+Given that F is true, and I is false, and because C is true only when both not I and not F are true, it follows that C is false.
+Given that C is false, and because Y matches C, it follows that Y is false.
+Given that C is false, and F is true, and because X is true only when both not F and not C are true, it follows that X is false.
+Given that F is true, and X is false, and because P is true only when both not X and not F are true, it follows that P is false.
+In the end, P is false.",576,False
+21,v_output,"You are given a small propositional logic system.
+Initially: Y is True.
+Rules:
+- K = (not Y) AND (not F).
+- F = not Y.
+- P = (Y) AND (K).
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, Y is true.
+Given that Y is true, and because F matches not Y, it follows that F is false.
+Given that F is false, and Y is true, and because K is true only when both not Y and not F are true, it follows that K is false.
+Given that K is false, and Y is true, and because P is true only when both Y and K are true, it follows that P is false.
+In the end, P is false.",430,False
+22,v_output,"You are given a small propositional logic system.
+Initially: Q is False.
+Rules:
+- P = A.
+- Y = not Q.
+- W = not A.
+- A = (Y) AND (not M).
+- M = not Q.
+- K = P.
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, Q is false.
+Given that Q is false, and because Y matches not Q, it follows that Y is true.
+Given that Q is false, and because M matches not Q, it follows that M is true.
+Given that M is true, and Y is true, and because A is true only when both Y and not M are true, it follows that A is false.
+Given that A is false, and because P matches A, it follows that P is false.
+Given that A is false, and because W matches not A, it follows that W is true.
+Given that P is false, and because K matches P, it follows that K is false.
+In the end, P is false.",460,False
+23,v_output,"You are given a small propositional logic system.
+Initially: E is True; G is True; V is False.
+Rules:
+- W = P.
+- R = (not L) AND (not G).
+- L = V.
+- P = R.
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, E is true, G is true, V is false.
+Given that V is false, and because L matches V, it follows that L is false.
+Given that G is true, and L is false, and because R is true only when both not L and not G are true, it follows that R is false.
+Given that R is false, and because P matches R, it follows that P is false.
+Given that P is false, and because W matches P, it follows that W is false.
+In the end, P is false.",405,False
+24,v_output,"You are given a small propositional logic system.
+Initially: B is True.
+Rules:
+- P = (L) AND (V).
+- I = F.
+- F = B.
+- L = (F) AND (not B).
+- V = not L.
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, B is true.
+Given that B is true, and because F matches B, it follows that F is true.
+Given that B is true, and F is true, and because L is true only when both F and not B are true, it follows that L is false.
+Given that L is false, and because V matches not L, it follows that V is true.
+Given that L is false, and V is true, and because P is true only when both L and V are true, it follows that P is false.
+Given that F is true, and because I matches F, it follows that I is true.
+In the end, P is false.",499,False

@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 import random
 from typing import Dict, List, Set, Tuple, Optional
 
@@ -284,6 +285,8 @@ def instance_to_nl_question(inst: Dict) -> Tuple[str, str]:
 def write_jsonl(path: str, items: List[Dict]) -> None:
     if not path:
         return
+    # Ensure the output directory exists
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         for ex in items:
             f.write(json.dumps(ex) + "\n")
@@ -291,6 +294,8 @@ def write_jsonl(path: str, items: List[Dict]) -> None:
 def write_csv(path: str, items: List[Dict]) -> None:
     if not path:
         return
+    # Ensure the output directory exists
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         # add cot + annotation columns
@@ -309,6 +314,8 @@ def write_csv(path: str, items: List[Dict]) -> None:
 def write_debug_txt(path: str, items: List[Dict]) -> None:
     if not path:
         return
+    # Ensure the output directory exists
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     # first example per regime
     firsts: Dict[str, Dict] = {}
     for inst in items:
