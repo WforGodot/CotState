@@ -1,0 +1,381 @@
+id,regime,question,answer,cot,p_char_index,p_value
+0,i_initial,"You are given a small propositional logic system.
+Initially: P is False.
+Rules:
+- B = (not W) AND (not P).
+- C = (not E) AND (P).
+- E = (not B) AND (not W).
+- W = not P.
+Question: What is the truth value of C? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: P=False.
+From initial facts, P is False.
+Step 1: Using W = not P. With values [P=False], we deduce W is True.
+Step 2: Using B = (not W) AND (not P). With values [P=False; W=True], we deduce B is False.
+Step 3: Using E = (not B) AND (not W). With values [B=False; W=True], we deduce E is False.
+Step 4: Using C = (not E) AND (P). With values [E=False; P=False], we deduce C is False.
+Conclusion: Therefore, C is False.",80,False
+1,i_initial,"You are given a small propositional logic system.
+Initially: N is False; P is False.
+Rules:
+- V = not N.
+- Q = (not D) AND (P).
+- D = not P.
+- C = (V) AND (not Q).
+Question: What is the truth value of C? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
+Initial facts: N=False; P=False.
+From initial facts, P is False.
+Step 1: Using V = not N. With values [N=False], we deduce V is True.
+Step 2: Using D = not P. With values [P=False], we deduce D is True.
+Step 3: Using Q = (not D) AND (P). With values [D=True; P=False], we deduce Q is False.
+Step 4: Using C = (V) AND (not Q). With values [Q=False; V=True], we deduce C is True.
+Conclusion: Therefore, C is True.",89,False
+2,i_initial,"You are given a small propositional logic system.
+Initially: P is False.
+Rules:
+- C = (Y) AND (P).
+- Y = P.
+- A = C.
+- N = C.
+Question: What is the truth value of A? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: P=False.
+From initial facts, P is False.
+Step 1: Using Y = P. With values [P=False], we deduce Y is False.
+Step 2: Using C = (Y) AND (P). With values [P=False; Y=False], we deduce C is False.
+Step 3: Using A = C. With values [C=False], we deduce A is False.
+Step 4: Using N = C. With values [C=False], we deduce N is False.
+Conclusion: Therefore, A is False.",80,False
+3,i_initial,"You are given a small propositional logic system.
+Initially: P is True.
+Rules:
+- H = not P.
+- B = not J.
+- J = (H) AND (not P).
+Question: What is the truth value of B? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
+Initial facts: P=True.
+From initial facts, P is True.
+Step 1: Using H = not P. With values [P=True], we deduce H is False.
+Step 2: Using J = (H) AND (not P). With values [H=False; P=True], we deduce J is False.
+Step 3: Using B = not J. With values [J=False], we deduce B is True.
+Conclusion: Therefore, B is True.",79,True
+4,i_initial,"You are given a small propositional logic system.
+Initially: P is True.
+Rules:
+- F = (not V) AND (not L).
+- L = P.
+- A = V.
+- V = (L) AND (P).
+Question: What is the truth value of F? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: P=True.
+From initial facts, P is True.
+Step 1: Using L = P. With values [P=True], we deduce L is True.
+Step 2: Using V = (L) AND (P). With values [L=True; P=True], we deduce V is True.
+Step 3: Using F = (not V) AND (not L). With values [L=True; V=True], we deduce F is False.
+Step 4: Using A = V. With values [V=True], we deduce A is True.
+Conclusion: Therefore, F is False.",79,True
+5,ii_inconsequential,"You are given a small propositional logic system.
+Initially: N is True; P is True; W is False.
+Rules:
+- M = W.
+- D = (M) AND (V).
+- V = not N.
+Question: What is the truth value of D? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: N=True; P=True; W=False.
+From initial facts, P is True.
+Step 1: Using M = W. With values [W=False], we deduce M is False.
+Step 2: Using V = not N. With values [N=True], we deduce V is False.
+Step 3: Using D = (M) AND (V). With values [M=False; V=False], we deduce D is False.
+Conclusion: Therefore, D is False.",96,True
+6,ii_inconsequential,"You are given a small propositional logic system.
+Initially: L is True; P is False; V is True.
+Rules:
+- Z = U.
+- U = V.
+- E = (U) AND (not Z).
+Question: What is the truth value of E? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: L=True; P=False; V=True.
+From initial facts, P is False.
+Step 1: Using U = V. With values [V=True], we deduce U is True.
+Step 2: Using Z = U. With values [U=True], we deduce Z is True.
+Step 3: Using E = (U) AND (not Z). With values [U=True; Z=True], we deduce E is False.
+Conclusion: Therefore, E is False.",96,False
+7,ii_inconsequential,"You are given a small propositional logic system.
+Initially: P is False; R is False.
+Rules:
+- U = (not R) AND (B).
+- G = R.
+- B = R.
+- Z = P.
+- E = U.
+Question: What is the truth value of E? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: P=False; R=False.
+From initial facts, P is False.
+Step 1: Using G = R. With values [R=False], we deduce G is False.
+Step 2: Using B = R. With values [R=False], we deduce B is False.
+Step 3: Using Z = P. With values [P=False], we deduce Z is False.
+Step 4: Using U = (not R) AND (B). With values [B=False; R=False], we deduce U is False.
+Step 5: Using E = U. With values [U=False], we deduce E is False.
+Conclusion: Therefore, E is False.",89,False
+8,ii_inconsequential,"You are given a small propositional logic system.
+Initially: M is True; P is True.
+Rules:
+- C = not D.
+- T = M.
+- O = (D) AND (not M).
+- D = not M.
+- A = not D.
+- E = (C) AND (not O).
+Question: What is the truth value of E? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
+Initial facts: M=True; P=True.
+From initial facts, P is True.
+Step 1: Using T = M. With values [M=True], we deduce T is True.
+Step 2: Using D = not M. With values [M=True], we deduce D is False.
+Step 3: Using A = not D. With values [D=False], we deduce A is True.
+Step 4: Using C = not D. With values [D=False], we deduce C is True.
+Step 5: Using O = (D) AND (not M). With values [D=False; M=True], we deduce O is False.
+Step 6: Using E = (C) AND (not O). With values [C=True; O=False], we deduce E is True.
+Conclusion: Therefore, E is True.",87,True
+9,ii_inconsequential,"You are given a small propositional logic system.
+Initially: I is True; P is True; V is True.
+Rules:
+- Z = not I.
+- F = (N) AND (V).
+- N = (not I) AND (G).
+- G = I.
+Question: What is the truth value of F? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: I=True; P=True; V=True.
+From initial facts, P is True.
+Step 1: Using Z = not I. With values [I=True], we deduce Z is False.
+Step 2: Using G = I. With values [I=True], we deduce G is True.
+Step 3: Using N = (not I) AND (G). With values [G=True; I=True], we deduce N is False.
+Step 4: Using F = (N) AND (V). With values [N=False; V=True], we deduce F is False.
+Conclusion: Therefore, F is False.",95,True
+10,iii_derived,"You are given a small propositional logic system.
+Initially: S is False.
+Rules:
+- O = (S) AND (not P).
+- P = not S.
+- A = (S) AND (O).
+Question: What is the truth value of A? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: S=False.
+Step 1: Using P = not S. With values [S=False], we deduce P is True.
+Step 2: Using O = (S) AND (not P). With values [P=True; S=False], we deduce O is False.
+Step 3: Using A = (S) AND (O). With values [O=False; S=False], we deduce A is False.
+Conclusion: Therefore, A is False.",118,True
+11,iii_derived,"You are given a small propositional logic system.
+Initially: C is True; G is True; Z is False.
+Rules:
+- L = Z.
+- P = G.
+- K = not O.
+- F = P.
+- O = (not L) AND (P).
+- X = (O) AND (not G).
+Question: What is the truth value of X? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: C=True; G=True; Z=False.
+Step 1: Using L = Z. With values [Z=False], we deduce L is False.
+Step 2: Using P = G. With values [G=True], we deduce P is True.
+Step 3: Using F = P. With values [P=True], we deduce F is True.
+Step 4: Using O = (not L) AND (P). With values [L=False; P=True], we deduce O is True.
+Step 5: Using X = (O) AND (not G). With values [G=True; O=True], we deduce X is False.
+Step 6: Using K = not O. With values [O=True], we deduce K is False.
+Conclusion: Therefore, X is False.",195,True
+12,iii_derived,"You are given a small propositional logic system.
+Initially: N is False; O is False; R is True.
+Rules:
+- B = not O.
+- M = (O) AND (R).
+- P = (N) AND (not M).
+- D = not P.
+- Y = not M.
+Question: What is the truth value of D? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
+Initial facts: N=False; O=False; R=True.
+Step 1: Using B = not O. With values [O=False], we deduce B is True.
+Step 2: Using M = (O) AND (R). With values [O=False; R=True], we deduce M is False.
+Step 3: Using P = (N) AND (not M). With values [M=False; N=False], we deduce P is False.
+Step 4: Using D = not P. With values [P=False], we deduce D is True.
+Step 5: Using Y = not M. With values [M=False], we deduce Y is True.
+Conclusion: Therefore, D is True.",307,False
+13,iii_derived,"You are given a small propositional logic system.
+Initially: F is False.
+Rules:
+- D = not P.
+- I = D.
+- P = (not G) AND (F).
+- G = F.
+Question: What is the truth value of I? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
+Initial facts: F=False.
+Step 1: Using G = F. With values [F=False], we deduce G is False.
+Step 2: Using P = (not G) AND (F). With values [F=False; G=False], we deduce P is False.
+Step 3: Using D = not P. With values [P=False], we deduce D is True.
+Step 4: Using I = D. With values [D=True], we deduce I is True.
+Conclusion: Therefore, I is True.",203,False
+14,iii_derived,"You are given a small propositional logic system.
+Initially: Q is True.
+Rules:
+- Y = (not Q) AND (not P).
+- P = not Q.
+- X = not Y.
+Question: What is the truth value of X? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
+Initial facts: Q=True.
+Step 1: Using P = not Q. With values [Q=True], we deduce P is False.
+Step 2: Using Y = (not Q) AND (not P). With values [P=False; Q=True], we deduce Y is False.
+Step 3: Using X = not Y. With values [Y=False], we deduce X is True.
+Conclusion: Therefore, X is True.",116,False
+15,iv_indeterminate,"You are given a small propositional logic system.
+Initially: X is False.
+Rules:
+- L = (not X) AND (not A).
+- E = X.
+- A = (not X) AND (E).
+Question: What is the truth value of L? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
+Initial facts: X=False.
+Step 1: Using E = X. With values [X=False], we deduce E is False.
+Step 2: Using A = (not X) AND (E). With values [E=False; X=False], we deduce A is False.
+Step 3: Using L = (not X) AND (not A). With values [A=False; X=False], we deduce L is True.
+Conclusion: Therefore, L is True.",,Unknown
+16,iv_indeterminate,"You are given a small propositional logic system.
+Initially: M is False; Z is True.
+Rules:
+- L = (A) AND (not Z).
+- H = M.
+- Y = not M.
+- A = (not Z) AND (not E).
+- E = M.
+Question: What is the truth value of L? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: M=False; Z=True.
+Step 1: Using H = M. With values [M=False], we deduce H is False.
+Step 2: Using Y = not M. With values [M=False], we deduce Y is True.
+Step 3: Using E = M. With values [M=False], we deduce E is False.
+Step 4: Using A = (not Z) AND (not E). With values [E=False; Z=True], we deduce A is False.
+Step 5: Using L = (A) AND (not Z). With values [A=False; Z=True], we deduce L is False.
+Conclusion: Therefore, L is False.",,Unknown
+17,iv_indeterminate,"You are given a small propositional logic system.
+Initially: D is False.
+Rules:
+- S = (R) AND (not D).
+- W = R.
+- O = R.
+- Q = D.
+- R = Q.
+Question: What is the truth value of S? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: D=False.
+Step 1: Using Q = D. With values [D=False], we deduce Q is False.
+Step 2: Using R = Q. With values [Q=False], we deduce R is False.
+Step 3: Using S = (R) AND (not D). With values [D=False; R=False], we deduce S is False.
+Step 4: Using W = R. With values [R=False], we deduce W is False.
+Step 5: Using O = R. With values [R=False], we deduce O is False.
+Conclusion: Therefore, S is False.",,Unknown
+18,iv_indeterminate,"You are given a small propositional logic system.
+Initially: G is True.
+Rules:
+- A = (K) AND (not E).
+- X = E.
+- R = (not A) AND (not E).
+- K = G.
+- L = not K.
+- E = G.
+Question: What is the truth value of R? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: G=True.
+Step 1: Using K = G. With values [G=True], we deduce K is True.
+Step 2: Using L = not K. With values [K=True], we deduce L is False.
+Step 3: Using E = G. With values [G=True], we deduce E is True.
+Step 4: Using A = (K) AND (not E). With values [E=True; K=True], we deduce A is False.
+Step 5: Using X = E. With values [E=True], we deduce X is True.
+Step 6: Using R = (not A) AND (not E). With values [A=False; E=True], we deduce R is False.
+Conclusion: Therefore, R is False.",,Unknown
+19,iv_indeterminate,"You are given a small propositional logic system.
+Initially: Y is False.
+Rules:
+- N = Y.
+- H = (C) AND (not Y).
+- C = (Y) AND (N).
+Question: What is the truth value of H? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: Y=False.
+Step 1: Using N = Y. With values [Y=False], we deduce N is False.
+Step 2: Using C = (Y) AND (N). With values [N=False; Y=False], we deduce C is False.
+Step 3: Using H = (C) AND (not Y). With values [C=False; Y=False], we deduce H is False.
+Conclusion: Therefore, H is False.",,Unknown
+20,v_output,"You are given a small propositional logic system.
+Initially: S is True; X is False.
+Rules:
+- Y = not Q.
+- O = not X.
+- I = X.
+- Q = (not J) AND (not X).
+- J = not X.
+- P = (not S) AND (Y).
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: S=True; X=False.
+Step 1: Using O = not X. With values [X=False], we deduce O is True.
+Step 2: Using I = X. With values [X=False], we deduce I is False.
+Step 3: Using J = not X. With values [X=False], we deduce J is True.
+Step 4: Using Q = (not J) AND (not X). With values [J=True; X=False], we deduce Q is False.
+Step 5: Using Y = not Q. With values [Q=False], we deduce Y is True.
+Step 6: Using P = (not S) AND (Y). With values [S=True; Y=True], we deduce P is False.
+Conclusion: Therefore, P is False.",508,False
+21,v_output,"You are given a small propositional logic system.
+Initially: U is False.
+Rules:
+- H = not R.
+- W = not U.
+- P = (not R) AND (not D).
+- D = not R.
+- R = not W.
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: U=False.
+Step 1: Using W = not U. With values [U=False], we deduce W is True.
+Step 2: Using R = not W. With values [W=True], we deduce R is False.
+Step 3: Using H = not R. With values [R=False], we deduce H is True.
+Step 4: Using D = not R. With values [R=False], we deduce D is True.
+Step 5: Using P = (not R) AND (not D). With values [D=True; R=False], we deduce P is False.
+Conclusion: Therefore, P is False.",416,False
+22,v_output,"You are given a small propositional logic system.
+Initially: H is False.
+Rules:
+- Q = not P.
+- P = (not Z) AND (A).
+- D = not A.
+- A = H.
+- Z = H.
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: H=False.
+Step 1: Using A = H. With values [H=False], we deduce A is False.
+Step 2: Using Z = H. With values [H=False], we deduce Z is False.
+Step 3: Using P = (not Z) AND (A). With values [A=False; Z=False], we deduce P is False.
+Step 4: Using D = not A. With values [A=False], we deduce D is True.
+Step 5: Using Q = not P. With values [P=False], we deduce Q is True.
+Conclusion: Therefore, P is False.",269,False
+23,v_output,"You are given a small propositional logic system.
+Initially: M is True.
+Rules:
+- Q = not H.
+- P = (Z) AND (not M).
+- O = not P.
+- Z = (M) AND (H).
+- H = not M.
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
+Initial facts: M=True.
+Step 1: Using H = not M. With values [M=True], we deduce H is False.
+Step 2: Using Q = not H. With values [H=False], we deduce Q is True.
+Step 3: Using Z = (M) AND (H). With values [H=False; M=True], we deduce Z is False.
+Step 4: Using P = (Z) AND (not M). With values [M=True; Z=False], we deduce P is False.
+Step 5: Using O = not P. With values [P=False], we deduce O is True.
+Conclusion: Therefore, P is False.",357,False
+24,v_output,"You are given a small propositional logic system.
+Initially: G is False; V is False.
+Rules:
+- Z = (not V) AND (Q).
+- P = not Z.
+- M = V.
+- Q = (G) AND (D).
+- U = Z.
+- D = (not V) AND (not G).
+Question: What is the truth value of P? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
+Initial facts: G=False; V=False.
+Step 1: Using M = V. With values [V=False], we deduce M is False.
+Step 2: Using D = (not V) AND (not G). With values [G=False; V=False], we deduce D is True.
+Step 3: Using Q = (G) AND (D). With values [D=True; G=False], we deduce Q is False.
+Step 4: Using Z = (not V) AND (Q). With values [Q=False; V=False], we deduce Z is False.
+Step 5: Using P = not Z. With values [Z=False], we deduce P is True.
+Step 6: Using U = Z. With values [Z=False], we deduce U is False.
+Conclusion: Therefore, P is True.",458,True

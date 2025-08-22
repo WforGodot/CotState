@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cot"
+version = "0.1.0"
+description = "Chain-of-thought probing utilities and scripts"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Your Name" }]
+license = { file = "LICENSE" }
+dependencies = [
+  "transformers>=4.36",
+  "torch>=2.0",
+  "accelerate>=0.24",
+  # bitsandbytes is optional on some platforms; install manually if needed
+  "scikit-learn>=1.2",
+]
+
+[project.scripts]
+cot-datagen-simple = "cot.datagen.datagen_simple:main"
+cot-sanity = "cot.sanity_check.run:main"
+cot-collect-activations = "cot.collect_activations:main"
+cot-train-probes = "cot.probe.train_probes:main"
+cot-ablate-dom = "cot.ablate.ablate_dom:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["cot*"]
+exclude = ["*.tests", "*.testing"]
+
+[tool.setuptools.package-data]
+cot = [
+  "prompts/*.txt",
+]

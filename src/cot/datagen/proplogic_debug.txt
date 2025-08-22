@@ -1,0 +1,145 @@
+=== i_initial ===
+You are given a small propositional logic system.
+Initially: P is False.
+Rules:
+- B = (not W) AND (not P).
+- C = (not E) AND (P).
+- E = (not B) AND (not W).
+- W = not P.
+Question: What is the truth value of C? Answer 'True' or 'False'.
+Gold answer: False
+Declared categories:
+  initial:        ['P']
+  useful(used):   ['B', 'E', 'W']
+  useless(unused):[]
+  indeterminate:  ['G', 'X']
+  output_var:     C
+Observed minimal support path to output:
+  minimal_support:['B', 'C', 'E', 'P', 'W']
+
+COT (gold):
+Let’s solve this step by step.
+Initial facts: P=False.
+From initial facts, P is || False.
+Step 1: Using W = not P. With values [P=False], we deduce W is True.
+Step 2: Using B = (not W) AND (not P). With values [P=False; W=True], we deduce B is False.
+Step 3: Using E = (not B) AND (not W). With values [B=False; W=True], we deduce E is False.
+Step 4: Using C = (not E) AND (P). With values [E=False; P=False], we deduce C is False.
+Conclusion: Therefore, C is False.
+(P becomes determinate at char index 80, value=False)
+
+=== ii_inconsequential ===
+You are given a small propositional logic system.
+Initially: N is True; P is True; W is False.
+Rules:
+- M = W.
+- D = (M) AND (V).
+- V = not N.
+Question: What is the truth value of D? Answer 'True' or 'False'.
+Gold answer: False
+Declared categories:
+  initial:        ['N', 'P', 'W']
+  useful(used):   ['M', 'V']
+  useless(unused):[]
+  indeterminate:  []
+  output_var:     D
+Observed minimal support path to output:
+  minimal_support:['D', 'M', 'N', 'V', 'W']
+
+COT (gold):
+Let’s solve this step by step.
+Initial facts: N=True; P=True; W=False.
+From initial facts, P is || True.
+Step 1: Using M = W. With values [W=False], we deduce M is False.
+Step 2: Using V = not N. With values [N=True], we deduce V is False.
+Step 3: Using D = (M) AND (V). With values [M=False; V=False], we deduce D is False.
+Conclusion: Therefore, D is False.
+(P becomes determinate at char index 96, value=True)
+
+=== iii_derived ===
+You are given a small propositional logic system.
+Initially: S is False.
+Rules:
+- O = (S) AND (not P).
+- P = not S.
+- A = (S) AND (O).
+Question: What is the truth value of A? Answer 'True' or 'False'.
+Gold answer: False
+Declared categories:
+  initial:        ['S']
+  useful(used):   ['O', 'P']
+  useless(unused):[]
+  indeterminate:  ['J']
+  output_var:     A
+Observed minimal support path to output:
+  minimal_support:['A', 'O', 'P', 'S']
+
+COT (gold):
+Let’s solve this step by step.
+Initial facts: S=False.
+Step 1: Using P = not S. With values [S=False], we deduce P is || True.
+Step 2: Using O = (S) AND (not P). With values [P=True; S=False], we deduce O is False.
+Step 3: Using A = (S) AND (O). With values [O=False; S=False], we deduce A is False.
+Conclusion: Therefore, A is False.
+(P becomes determinate at char index 118, value=True)
+
+=== iv_indeterminate ===
+You are given a small propositional logic system.
+Initially: X is False.
+Rules:
+- L = (not X) AND (not A).
+- E = X.
+- A = (not X) AND (E).
+Question: What is the truth value of L? Answer 'True' or 'False'.
+Gold answer: True
+Declared categories:
+  initial:        ['X']
+  useful(used):   ['A', 'E']
+  useless(unused):[]
+  indeterminate:  ['P']
+  output_var:     L
+Observed minimal support path to output:
+  minimal_support:['A', 'E', 'L', 'X']
+
+COT (gold):
+Let’s solve this step by step.
+Initial facts: X=False.
+Step 1: Using E = X. With values [X=False], we deduce E is False.
+Step 2: Using A = (not X) AND (E). With values [E=False; X=False], we deduce A is False.
+Step 3: Using L = (not X) AND (not A). With values [A=False; X=False], we deduce L is True.
+Conclusion: Therefore, L is True.
+(P remains indeterminate in this instance)
+
+=== v_output ===
+You are given a small propositional logic system.
+Initially: S is True; X is False.
+Rules:
+- Y = not Q.
+- O = not X.
+- I = X.
+- Q = (not J) AND (not X).
+- J = not X.
+- P = (not S) AND (Y).
+Question: What is the truth value of P? Answer 'True' or 'False'.
+Gold answer: False
+Declared categories:
+  initial:        ['S', 'X']
+  useful(used):   ['J', 'Q', 'Y']
+  useless(unused):['I', 'O']
+  indeterminate:  ['Z']
+  output_var:     P
+Observed minimal support path to output:
+  minimal_support:['J', 'P', 'Q', 'S', 'X', 'Y']
+
+COT (gold):
+Let’s solve this step by step.
+Initial facts: S=True; X=False.
+Step 1: Using O = not X. With values [X=False], we deduce O is True.
+Step 2: Using I = X. With values [X=False], we deduce I is False.
+Step 3: Using J = not X. With values [X=False], we deduce J is True.
+Step 4: Using Q = (not J) AND (not X). With values [J=True; X=False], we deduce Q is False.
+Step 5: Using Y = not Q. With values [Q=False], we deduce Y is True.
+Step 6: Using P = (not S) AND (Y). With values [S=True; Y=True], we deduce P is || False.
+Conclusion: Therefore, P is False.
+(P becomes determinate at char index 508, value=False)
+
