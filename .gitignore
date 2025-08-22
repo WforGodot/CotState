@@ -182,3 +182,5 @@ cython_debug/
 
 *.pt
 *.npz
+outputs/
+src/cot/outputs/collect/

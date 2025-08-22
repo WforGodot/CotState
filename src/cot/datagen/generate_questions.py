@@ -4,16 +4,7 @@ import os
 import random
 from typing import Dict, List, Set, Tuple, Optional
 
-from datagen_config import (
-    PREFERRED_VARS,
-    QUESTIONS_PER_REGIME,
-    COUNTS,
-    SEED,
-    OUTPUT_JSONL_PATH,
-    OUTPUT_CSV_PATH,
-    OUTPUT_DEBUG_TXT,
-    MAX_TRIES_PER_ITEM,
-)
+import datagen_config as cfg
 
 from logic_builder import build_forward_logic_instance
 from cot_builder import build_cot_and_annotation 
@@ -154,11 +145,11 @@ def _attempt_instance_for_regime(
     regime: str,
     p: str = "P",
 ):
-    for _ in range(MAX_TRIES_PER_ITEM):
-        n_init = _rand_count(rng, COUNTS["initial"])
-        n_used = _rand_count(rng, COUNTS["used"])
-        n_unused = _rand_count(rng, COUNTS["unused"])
-        n_indet = _rand_count(rng, COUNTS["indeterminate"])
+    for _ in range(cfg.MAX_TRIES_PER_ITEM):
+        n_init = _rand_count(rng, cfg.COUNTS["initial"])
+        n_used = _rand_count(rng, cfg.COUNTS["used"])
+        n_unused = _rand_count(rng, cfg.COUNTS["unused"])
+        n_indet = _rand_count(rng, cfg.COUNTS["indeterminate"])
 
         # Be robust to shortfalls of variables on this draw
         try:
@@ -237,7 +228,7 @@ def _attempt_instance_for_regime(
 
         return inst
 
-    raise RuntimeError(f"Could not construct an instance for regime {regime} after {MAX_TRIES_PER_ITEM} tries.")
+    raise RuntimeError(f"Could not construct an instance for regime {regime} after {cfg.MAX_TRIES_PER_ITEM} tries.")
 
 
 # --------------------------
@@ -353,13 +344,13 @@ def write_debug_txt(path: str, items: List[Dict]) -> None:
 # Script entry
 # -------------
 def generate_all():
-    rng = random.Random(SEED)
-    vars_pool = [v for v in PREFERRED_VARS]
+    rng = random.Random(cfg.SEED)
+    vars_pool = [v for v in cfg.PREFERRED_VARS]
     if "P" not in vars_pool:
         vars_pool = ["P"] + vars_pool
 
     out: List[Dict] = []
-    for regime, n in QUESTIONS_PER_REGIME.items():
+    for regime, n in cfg.QUESTIONS_PER_REGIME.items():
         for _ in range(n):
             inst = _attempt_instance_for_regime(rng, vars_pool, regime, p="P")
             out.append(inst)
@@ -368,14 +359,14 @@ def generate_all():
 if __name__ == "__main__":
     dataset = generate_all()
     print(f"Generated {len(dataset)} items "
-          f"({', '.join(f'{k}:{v}' for k,v in QUESTIONS_PER_REGIME.items())}).")
+          f"({', '.join(f'{k}:{v}' for k,v in cfg.QUESTIONS_PER_REGIME.items())}).")
 
-    if OUTPUT_JSONL_PATH:
-        write_jsonl(OUTPUT_JSONL_PATH, dataset)
-        print(" -", OUTPUT_JSONL_PATH)
-    if OUTPUT_CSV_PATH:
-        write_csv(OUTPUT_CSV_PATH, dataset)
-        print(" -", OUTPUT_CSV_PATH)
-    if OUTPUT_DEBUG_TXT:
-        write_debug_txt(OUTPUT_DEBUG_TXT, dataset)
-        print(" -", OUTPUT_DEBUG_TXT)
+    if cfg.OUTPUT_JSONL_PATH:
+        write_jsonl(cfg.OUTPUT_JSONL_PATH, dataset)
+        print(" -", cfg.OUTPUT_JSONL_PATH)
+    if cfg.OUTPUT_CSV_PATH:
+        write_csv(cfg.OUTPUT_CSV_PATH, dataset)
+        print(" -", cfg.OUTPUT_CSV_PATH)
+    if cfg.OUTPUT_DEBUG_TXT:
+        write_debug_txt(cfg.OUTPUT_DEBUG_TXT, dataset)
+        print(" -", cfg.OUTPUT_DEBUG_TXT)

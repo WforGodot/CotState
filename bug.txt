@@ -1,0 +1,17 @@
+(cot) PS C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen> python generate_questions.py
+Generated 25 items (i_initial:5, ii_inconsequential:5, iii_derived:5, iv_indeterminate:5, v_output:5).
+ - ..\outputs\datagen\proplogic_dataset.jsonl
+Traceback (most recent call last):
+  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen\generate_questions.py", line 381, in <module>
+    write_csv(OUTPUT_CSV_PATH, dataset)
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen\generate_questions.py", line 308, in write_csv
+    q, a = instance_to_nl_question(inst)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen\generate_questions.py", line 277, in instance_to_nl_question
+    rules_lines = [_fmt_rule(r) for r in rules]
+                   ~~~~~~~~~^^^
+  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen\generate_questions.py", line 260, in _fmt_rule
+    a, b = ins
+    ^^^^
+ValueError: not enough values to unpack (expected 2, got 1)

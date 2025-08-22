@@ -1,158 +1,142 @@
-#!/usr/bin/env python3
 """
-Install PyTorch 2.8.0 matching the local CUDA runtime if available.
+Installs all required libraries for this project, including:
+- torch==2.8.0+cu126, torchaudio==2.8.0+cu126, torchvision==0.23.0+cu126
+- transformers==4.55.2, accelerate==1.10.0, datasets==4.0.0
+- scikit-learn==1.7.1, matplotlib==3.10.5, ipywidgets==8.1.7, tqdm==4.67.1
+- bitsandbytes==0.46.1
+- transformer_lens==2.16.1
 
-Behavior
-- If torch==2.8.0 is already installed, no action is taken.
-- Otherwise, detect CUDA version (nvidia-smi, nvcc, or env), map to a
-  supported channel (cu124 | cu121 | cu118 | cpu), and install via pip.
-
-Notes
-- This script prefers the modern per-channel index URLs used by PyTorch.
-- If the first attempt fails, it falls back to alternative commands.
+Behavior:
+- Does NOT reinstall torch/torchaudio/torchvision if already at the correct versions.
+- Reinstalls NumPy ONLY if a PyTorch component was (re)installed.
+- Saves a manifest of installed versions to outputs/install/manifest.json.
+- Re-runs overwrite the manifest and logs.
 """
-from __future__ import annotations
-
-import os
-import re
-import shlex
+import json
 import subprocess
 import sys
-from typing import Optional, Tuple
+from pathlib import Path
+
+PYTORCH_INDEX_URL = "https://download.pytorch.org/whl/cu126"
+DESIRED = {
+    "torch": "2.8.0+cu126",
+    "torchaudio": "2.8.0+cu126",
+    "torchvision": "0.23.0+cu126",
+}
+DESIRED_CUDA = "12.6"  # torch.version.cuda should report this for cu126 wheels
 
 
-def run(cmd: list[str], check: bool = False) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, text=True, capture_output=True, check=check)
+def pip_install(args, log_path: Path):
+    cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", "--log", str(log_path)] + args
+    print("pip install", " ".join(args))
+    subprocess.check_call(cmd)
 
 
-def have_torch_2_8() -> bool:
+def get_mod_version(mod_name):
     try:
-        import torch  # type: ignore
-
-        ver = getattr(torch, "__version__", "")
-        return ver.startswith("2.8.0")
+        mod = __import__(mod_name)
+        return getattr(mod, "__version__", None), mod
     except Exception:
-        return False
+        return None, None
 
 
-def parse_version_tuple(s: str) -> Optional[Tuple[int, int]]:
-    m = re.search(r"(\d+)\.(\d+)", s)
-    if not m:
-        return None
-    return int(m.group(1)), int(m.group(2))
+def main():
+    out_dir = Path("outputs/install")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_file = out_dir / "pip.log"
 
+    # Fresh log each run
+    if log_file.exists():
+        try:
+            log_file.unlink()
+        except Exception:
+            pass
 
-def detect_cuda_version() -> Optional[Tuple[int, int]]:
-    # 1) Explicit env hint (e.g., CUDA_VERSION=12.1)
-    env = os.environ.get("CUDA_VERSION") or os.environ.get("CUDA_HOME_VERSION")
-    if env:
-        vt = parse_version_tuple(env)
-        if vt:
-            return vt
+    # Detect current torch/cuda
+    torch_ver, torch_mod = get_mod_version("torch")
+    cur_cuda = getattr(getattr(torch_mod, "version", None), "cuda", None) if torch_mod else None
+    print(f"Detected Torch: {torch_ver} | CUDA: {cur_cuda}")
 
-    # 2) nvidia-smi (works on most driver installs)
-    try:
-        p = run(["nvidia-smi"])
-        m = re.search(r"CUDA Version\s*:\s*(\d+\.\d+)", p.stdout)
-        if m:
-            vt = parse_version_tuple(m.group(1))
-            if vt:
-                return vt
-    except FileNotFoundError:
-        pass
+    # Figure out which PyTorch components (if any) need installing/updating
+    to_install_pt = []
+    need_torch = not (torch_ver == DESIRED["torch"] and cur_cuda == DESIRED_CUDA)
+    if need_torch:
+        to_install_pt.append(f"torch=={DESIRED['torch']}")
+    ta_ver, _ = get_mod_version("torchaudio")
+    if ta_ver != DESIRED["torchaudio"]:
+        to_install_pt.append(f"torchaudio=={DESIRED['torchaudio']}")
+    tv_ver, _ = get_mod_version("torchvision")
+    if tv_ver != DESIRED["torchvision"]:
+        to_install_pt.append(f"torchvision=={DESIRED['torchvision']}")
 
-    # 3) nvcc --version (developer toolkit)
-    try:
-        p = run(["nvcc", "--version"])  # type: ignore
-        m = re.search(r"release\s*(\d+\.\d+)", p.stdout)
-        if m:
-            vt = parse_version_tuple(m.group(1))
-            if vt:
-                return vt
-    except FileNotFoundError:
-        pass
-
-    # 4) Last resort: if an older torch exists, read torch.version.cuda
-    try:
-        import torch  # type: ignore
-
-        cv = getattr(getattr(torch, "version", object()), "cuda", None)
-        if isinstance(cv, str):
-            vt = parse_version_tuple(cv)
-            if vt:
-                return vt
-    except Exception:
-        pass
-
-    return None
-
-
-def map_cuda_to_channel(vt: Optional[Tuple[int, int]]) -> str:
-    """Map a CUDA version tuple to a PyTorch wheel channel.
-
-    Known channels (recent releases): cu124, cu121, cu118, cpu
-    """
-    if vt is None:
-        return "cpu"
-    major, minor = vt
-    if major >= 12 and minor >= 4:
-        return "cu124"
-    if major >= 12 and minor >= 1:
-        return "cu121"
-    if major == 11 and minor >= 8:
-        return "cu118"
-    return "cpu"
-
-
-def pip_install_torch(channel: str) -> bool:
-    py = sys.executable
-
-    if channel == "cpu":
-        attempts = [
-            [py, "-m", "pip", "install", "--index-url", "https://download.pytorch.org/whl/cpu", "torch==2.8.0"],
-            [py, "-m", "pip", "install", "torch==2.8.0"],
-        ]
+    pytorch_changed = False
+    if to_install_pt:
+        print("Installing/aligning PyTorch stack:", ", ".join(to_install_pt))
+        pip_install(["--index-url", PYTORCH_INDEX_URL] + to_install_pt, log_file)
+        pytorch_changed = True
     else:
-        # Prefer index-url form
-        attempts = [
-            [py, "-m", "pip", "install", "--index-url", f"https://download.pytorch.org/whl/{channel}", "torch==2.8.0"],
-            # Fallbacks: explicit wheel tag with -f finder
-            [py, "-m", "pip", "install", f"torch==2.8.0+{channel}", "-f", "https://download.pytorch.org/whl/torch_stable.html"],
-            # Extra-index form
-            [py, "-m", "pip", "install", "--extra-index-url", "https://download.pytorch.org/whl/torch_stable.html", f"torch==2.8.0+{channel}"],
-        ]
+        print("PyTorch stack already at desired versions; skipping reinstall.")
 
-    for cmd in attempts:
-        print(f"[install_deps] Trying: {' '.join(shlex.quote(c) for c in cmd)}")
-        p = subprocess.run(cmd)
-        if p.returncode == 0 and have_torch_2_8():
-            print("[install_deps] Installed torch==2.8.0 successfully.")
-            return True
-        else:
-            print(f"[install_deps] Attempt failed with code {p.returncode}.")
-    return False
+    # Reinstall current NumPy ONLY if PyTorch stack changed (helps ABI edges after torch swaps)
+    if pytorch_changed:
+        try:
+            import numpy as _np  # noqa
+            numpy_pin = f"numpy=={_np.__version__}"
+            print(f"Reinstalling {numpy_pin} to avoid ABI mismatch...")
+            pip_install(["--force-reinstall", numpy_pin], log_file)
+        except Exception:
+            print("NumPy not detectable pre-reinstall; installing latest stable NumPy from PyPI.")
+            pip_install(["numpy"], log_file)
 
+    # Core stack (pinned to latest stable compatible with Torch 2.8)
+    pkgs = [
+        "transformers==4.55.2",
+        "accelerate==1.10.0",
+        "datasets==4.0.0",
+        "scikit-learn==1.7.1",
+        "matplotlib==3.10.5",
+        "ipywidgets==8.1.7",
+        "tqdm==4.67.1",
+        "bitsandbytes==0.46.1",
+        "transformer_lens==2.16.1",
+        "scikit-learn>=1.2",
+    ]
+    pip_install(pkgs, log_file)
 
-def main() -> None:
-    if have_torch_2_8():
-        print("[install_deps] torch==2.8.0 already installed. Nothing to do.")
-        return
+    # Build manifest (be tolerant if some imports fail)
+    def safe_ver(mod_name):
+        try:
+            mod = __import__(mod_name)
+            return getattr(mod, "__version__", None)
+        except Exception:
+            return None
 
-    vt = detect_cuda_version()
-    chan = map_cuda_to_channel(vt)
-    vt_str = f"{vt[0]}.{vt[1]}" if vt else "none"
-    print(f"[install_deps] Detected CUDA: {vt_str} -> channel {chan}")
+    import importlib
+    importlib.invalidate_caches()
 
-    ok = pip_install_torch(chan)
-    if not ok and chan != "cpu":
-        print("[install_deps] Falling back to CPU build...")
-        ok = pip_install_torch("cpu")
+    torch_ver, torch_mod = get_mod_version("torch")
+    torch_cuda = getattr(getattr(torch_mod, "version", None), "cuda", None) if torch_mod else None
 
-    if not ok:
-        print("[install_deps] ERROR: Could not install torch==2.8.0 for your environment.")
-        sys.exit(1)
+    manifest = {
+        "torch": torch_ver,
+        "torch_cuda": torch_cuda,
+        "torchaudio": safe_ver("torchaudio"),
+        "torchvision": safe_ver("torchvision"),
+        "transformers": safe_ver("transformers"),
+        "accelerate": safe_ver("accelerate"),
+        "datasets": safe_ver("datasets"),
+        "scikit_learn": safe_ver("sklearn"),
+        "matplotlib": safe_ver("matplotlib"),
+        "ipywidgets": safe_ver("ipywidgets"),
+        "tqdm": safe_ver("tqdm"),
+        "bitsandbytes": safe_ver("bitsandbytes"),
+        "transformer_lens": safe_ver("transformer_lens"),
+    }
+
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    print("✅ Dependencies installed. Manifest written to outputs/install/manifest.json")
+    print(f"📄 pip log: {log_file}")
 
 
 if __name__ == "__main__":
     main()
-
