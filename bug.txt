@@ -1,17 +1,16 @@
-(cot) PS C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen> python generate_questions.py
-Generated 25 items (i_initial:5, ii_inconsequential:5, iii_derived:5, iv_indeterminate:5, v_output:5).
- - ..\outputs\datagen\proplogic_dataset.jsonl
+(cot) PS C:\Users\proje\Documents\GitHub\CotState\src\cot> python probes/run_probes.py
+[INFO] Loaded acts: C:\Users\proje\Documents\GitHub\CotState\src\cot\outputs\collect\resid_post_qwen3_collect.npz
+[INFO] Labels: C:\Users\proje\Documents\GitHub\CotState\src\cot\outputs\collect\resid_post_qwen3_collect_labels.csv | N=600 tokens | Positive rate=0.445
+[INFO] Detected 18 layer keys with prefix 'acts_resid_post_layer'.
+[WARN] Requested layers not found in activations: [27]. Training on intersection only.
+[INFO] Restricting to 5 requested layers out of 18 present: [12, 15, 18, 21, 24]
+Layers:   0%|                                                                                    | 0/5 [00:00<?, ?it/s]
 Traceback (most recent call last):
-  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen\generate_questions.py", line 381, in <module>
-    write_csv(OUTPUT_CSV_PATH, dataset)
-    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen\generate_questions.py", line 308, in write_csv
-    q, a = instance_to_nl_question(inst)
-           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
-  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen\generate_questions.py", line 277, in instance_to_nl_question
-    rules_lines = [_fmt_rule(r) for r in rules]
-                   ~~~~~~~~~^^^
-  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\datagen\generate_questions.py", line 260, in _fmt_rule
-    a, b = ins
-    ^^^^
-ValueError: not enough values to unpack (expected 2, got 1)
+  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\probes\run_probes.py", line 371, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\proje\Documents\GitHub\CotState\src\cot\probes\run_probes.py", line 240, in main
+    raise ValueError(
+        f"Length mismatch for layer {layer_idx}: X has {len(X)}, labels have {len(df)}"
+    )
+ValueError: Length mismatch for layer 12: X has 40685, labels have 600
