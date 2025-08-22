@@ -2,144 +2,150 @@
 You are given a small propositional logic system.
 Initially: P is False.
 Rules:
-- B = (not W) AND (not P).
-- C = (not E) AND (P).
-- E = (not B) AND (not W).
-- W = not P.
-Question: What is the truth value of C? Answer 'True' or 'False'.
-Gold answer: False
+- X = P.
+- N = (not P) AND (X).
+- U = (not N) AND (not P).
+Question: What is the truth value of U? Answer 'True' or 'False'.
+Gold answer: True
 Declared categories:
   initial:        ['P']
-  useful(used):   ['B', 'E', 'W']
+  useful(used):   ['N', 'X']
   useless(unused):[]
-  indeterminate:  ['G', 'X']
-  output_var:     C
+  indeterminate:  []
+  output_var:     U
 Observed minimal support path to output:
-  minimal_support:['B', 'C', 'E', 'P', 'W']
+  minimal_support:['N', 'P', 'U', 'X']
 
 COT (gold):
-Let’s solve this step by step.
-Initial facts: P=False.
-From initial facts, P is || False.
-Step 1: Using W = not P. With values [P=False], we deduce W is True.
-Step 2: Using B = (not W) AND (not P). With values [P=False; W=True], we deduce B is False.
-Step 3: Using E = (not B) AND (not W). With values [B=False; W=True], we deduce E is False.
-Step 4: Using C = (not E) AND (P). With values [E=False; P=False], we deduce C is False.
-Conclusion: Therefore, C is False.
-(P becomes determinate at char index 80, value=False)
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is || false.
+Right away, P is false.
+Given that P is false, and because X matches P, it follows that X is false.
+Given that X is false, and because N is true only when both not P and X are true, it follows that N is false.
+Given that N is false, and P is false, and because U is true only when both not N and not P are true, it follows that U is true.
+In the end, U is true.
+(P becomes determinate at char index 102, value=False)
 
 === ii_inconsequential ===
 You are given a small propositional logic system.
-Initially: N is True; P is True; W is False.
+Initially: C is False; P is True; X is True.
 Rules:
-- M = W.
-- D = (M) AND (V).
-- V = not N.
-Question: What is the truth value of D? Answer 'True' or 'False'.
+- I = (P) OR (not C).
+- Z = (O) AND (X).
+- Y = C.
+- O = not I.
+Question: What is the truth value of Z? Answer 'True' or 'False'.
 Gold answer: False
 Declared categories:
-  initial:        ['N', 'P', 'W']
-  useful(used):   ['M', 'V']
-  useless(unused):[]
-  indeterminate:  []
-  output_var:     D
+  initial:        ['C', 'P', 'X']
+  useful(used):   ['I', 'O']
+  useless(unused):['Y']
+  indeterminate:  ['Q', 'W']
+  output_var:     Z
 Observed minimal support path to output:
-  minimal_support:['D', 'M', 'N', 'V', 'W']
+  minimal_support:['C', 'I', 'O', 'Z']
 
 COT (gold):
-Let’s solve this step by step.
-Initial facts: N=True; P=True; W=False.
-From initial facts, P is || True.
-Step 1: Using M = W. With values [W=False], we deduce M is False.
-Step 2: Using V = not N. With values [N=True], we deduce V is False.
-Step 3: Using D = (M) AND (V). With values [M=False; V=False], we deduce D is False.
-Conclusion: Therefore, D is False.
-(P becomes determinate at char index 96, value=True)
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, C is false, P is || true, X is true.
+Right away, P is true.
+Given that C is false, and because I is true when at least one of P or not C is true, it follows that I is true.
+Given that C is false, and because Y matches C, it follows that Y is false.
+Given that I is true, and because O matches not I, it follows that O is false.
+Given that O is false, and because Z is true only when both O and X are true, it follows that Z is false.
+In the end, Z is false.
+(P becomes determinate at char index 114, value=True)
 
 === iii_derived ===
 You are given a small propositional logic system.
-Initially: S is False.
+Initially: D is True; V is False; W is False.
 Rules:
-- O = (S) AND (not P).
-- P = not S.
-- A = (S) AND (O).
-Question: What is the truth value of A? Answer 'True' or 'False'.
-Gold answer: False
+- Y = not W.
+- C = V.
+- P = (C) AND (not W).
+- X = (D) AND (not P).
+Question: What is the truth value of X? Answer 'True' or 'False'.
+Gold answer: True
 Declared categories:
-  initial:        ['S']
-  useful(used):   ['O', 'P']
-  useless(unused):[]
-  indeterminate:  ['J']
-  output_var:     A
+  initial:        ['D', 'V', 'W']
+  useful(used):   ['C', 'P']
+  useless(unused):['Y']
+  indeterminate:  ['M']
+  output_var:     X
 Observed minimal support path to output:
-  minimal_support:['A', 'O', 'P', 'S']
+  minimal_support:['C', 'D', 'P', 'V', 'X']
 
 COT (gold):
-Let’s solve this step by step.
-Initial facts: S=False.
-Step 1: Using P = not S. With values [S=False], we deduce P is || True.
-Step 2: Using O = (S) AND (not P). With values [P=True; S=False], we deduce O is False.
-Step 3: Using A = (S) AND (O). With values [O=False; S=False], we deduce A is False.
-Conclusion: Therefore, A is False.
-(P becomes determinate at char index 118, value=True)
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, D is true, V is false, W is false.
+Given that W is false, and because Y matches not W, it follows that Y is true.
+Given that V is false, and because C matches V, it follows that C is false.
+Given that C is false, and because P is true only when both C and not W are true, it follows that P is || false.
+Given that D is true, and P is false, and because X is true only when both D and not P are true, it follows that X is true.
+In the end, X is true.
+(P becomes determinate at char index 390, value=False)
 
 === iv_indeterminate ===
 You are given a small propositional logic system.
-Initially: X is False.
+Initially: G is False; I is False; K is False.
 Rules:
-- L = (not X) AND (not A).
-- E = X.
-- A = (not X) AND (E).
-Question: What is the truth value of L? Answer 'True' or 'False'.
+- O = (not G) AND (V).
+- V = K.
+- H = not V.
+- Y = (not G) AND (not O).
+- S = not V.
+Question: What is the truth value of Y? Answer 'True' or 'False'.
 Gold answer: True
 Declared categories:
-  initial:        ['X']
-  useful(used):   ['A', 'E']
-  useless(unused):[]
-  indeterminate:  ['P']
-  output_var:     L
+  initial:        ['G', 'I', 'K']
+  useful(used):   ['O', 'V']
+  useless(unused):['H', 'S']
+  indeterminate:  ['N', 'P']
+  output_var:     Y
 Observed minimal support path to output:
-  minimal_support:['A', 'E', 'L', 'X']
+  minimal_support:['G', 'K', 'O', 'V', 'Y']
 
 COT (gold):
-Let’s solve this step by step.
-Initial facts: X=False.
-Step 1: Using E = X. With values [X=False], we deduce E is False.
-Step 2: Using A = (not X) AND (E). With values [E=False; X=False], we deduce A is False.
-Step 3: Using L = (not X) AND (not A). With values [A=False; X=False], we deduce L is True.
-Conclusion: Therefore, L is True.
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, G is false, I is false, K is false.
+Given that K is false, and because V matches K, it follows that V is false.
+Given that V is false, and because H matches not V, it follows that H is true.
+Given that V is false, and because S matches not V, it follows that S is true.
+Given that V is false, and because O is true only when both not G and V are true, it follows that O is false.
+Given that G is false, and O is false, and because Y is true only when both not G and not O are true, it follows that Y is true.
+In the end, Y is true.
 (P remains indeterminate in this instance)
 
 === v_output ===
 You are given a small propositional logic system.
-Initially: S is True; X is False.
+Initially: O is True; V is False.
 Rules:
-- Y = not Q.
-- O = not X.
-- I = X.
-- Q = (not J) AND (not X).
-- J = not X.
-- P = (not S) AND (Y).
+- H = S.
+- G = (O) AND (S).
+- Y = (V) OR (not S).
+- X = not V.
+- P = (G) OR (not Y).
+- S = (V) AND (not O).
 Question: What is the truth value of P? Answer 'True' or 'False'.
 Gold answer: False
 Declared categories:
-  initial:        ['S', 'X']
-  useful(used):   ['J', 'Q', 'Y']
-  useless(unused):['I', 'O']
-  indeterminate:  ['Z']
+  initial:        ['O', 'V']
+  useful(used):   ['G', 'S', 'Y']
+  useless(unused):['H', 'X']
+  indeterminate:  []
   output_var:     P
 Observed minimal support path to output:
-  minimal_support:['J', 'P', 'Q', 'S', 'X', 'Y']
+  minimal_support:['G', 'O', 'P', 'S', 'Y']
 
 COT (gold):
-Let’s solve this step by step.
-Initial facts: S=True; X=False.
-Step 1: Using O = not X. With values [X=False], we deduce O is True.
-Step 2: Using I = X. With values [X=False], we deduce I is False.
-Step 3: Using J = not X. With values [X=False], we deduce J is True.
-Step 4: Using Q = (not J) AND (not X). With values [J=True; X=False], we deduce Q is False.
-Step 5: Using Y = not Q. With values [Q=False], we deduce Y is True.
-Step 6: Using P = (not S) AND (Y). With values [S=True; Y=True], we deduce P is || False.
-Conclusion: Therefore, P is False.
-(P becomes determinate at char index 508, value=False)
+I will reason forward from the initial facts until everything relevant is settled.
+At the start, O is true, V is false.
+Given that V is false, and because X matches not V, it follows that X is true.
+Given that O is true, and because S is true only when both V and not O are true, it follows that S is false.
+Given that S is false, and because H matches S, it follows that H is false.
+Given that S is false, and because G is true only when both O and S are true, it follows that G is false.
+Given that S is false, and because Y is true when at least one of V or not S is true, it follows that Y is true.
+Given that G is false, and Y is true, and because P is true when at least one of G or not Y is true, it follows that P is || false.
+In the end, P is false.
+(P becomes determinate at char index 725, value=False)
 

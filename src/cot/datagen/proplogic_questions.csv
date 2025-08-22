@@ -2,380 +2,368 @@ id,regime,question,answer,cot,p_char_index,p_value
 0,i_initial,"You are given a small propositional logic system.
 Initially: P is False.
 Rules:
-- B = (not W) AND (not P).
-- C = (not E) AND (P).
-- E = (not B) AND (not W).
-- W = not P.
-Question: What is the truth value of C? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: P=False.
-From initial facts, P is False.
-Step 1: Using W = not P. With values [P=False], we deduce W is True.
-Step 2: Using B = (not W) AND (not P). With values [P=False; W=True], we deduce B is False.
-Step 3: Using E = (not B) AND (not W). With values [B=False; W=True], we deduce E is False.
-Step 4: Using C = (not E) AND (P). With values [E=False; P=False], we deduce C is False.
-Conclusion: Therefore, C is False.",80,False
+- X = P.
+- N = (not P) AND (X).
+- U = (not N) AND (not P).
+Question: What is the truth value of U? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is false.
+Right away, P is false.
+Given that P is false, and because X matches P, it follows that X is false.
+Given that X is false, and because N is true only when both not P and X are true, it follows that N is false.
+Given that N is false, and P is false, and because U is true only when both not N and not P are true, it follows that U is true.
+In the end, U is true.",102,False
 1,i_initial,"You are given a small propositional logic system.
-Initially: N is False; P is False.
-Rules:
-- V = not N.
-- Q = (not D) AND (P).
-- D = not P.
-- C = (V) AND (not Q).
-Question: What is the truth value of C? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
-Initial facts: N=False; P=False.
-From initial facts, P is False.
-Step 1: Using V = not N. With values [N=False], we deduce V is True.
-Step 2: Using D = not P. With values [P=False], we deduce D is True.
-Step 3: Using Q = (not D) AND (P). With values [D=True; P=False], we deduce Q is False.
-Step 4: Using C = (V) AND (not Q). With values [Q=False; V=True], we deduce C is True.
-Conclusion: Therefore, C is True.",89,False
-2,i_initial,"You are given a small propositional logic system.
-Initially: P is False.
-Rules:
-- C = (Y) AND (P).
-- Y = P.
-- A = C.
-- N = C.
-Question: What is the truth value of A? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: P=False.
-From initial facts, P is False.
-Step 1: Using Y = P. With values [P=False], we deduce Y is False.
-Step 2: Using C = (Y) AND (P). With values [P=False; Y=False], we deduce C is False.
-Step 3: Using A = C. With values [C=False], we deduce A is False.
-Step 4: Using N = C. With values [C=False], we deduce N is False.
-Conclusion: Therefore, A is False.",80,False
-3,i_initial,"You are given a small propositional logic system.
-Initially: P is True.
-Rules:
-- H = not P.
-- B = not J.
-- J = (H) AND (not P).
-Question: What is the truth value of B? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
-Initial facts: P=True.
-From initial facts, P is True.
-Step 1: Using H = not P. With values [P=True], we deduce H is False.
-Step 2: Using J = (H) AND (not P). With values [H=False; P=True], we deduce J is False.
-Step 3: Using B = not J. With values [J=False], we deduce B is True.
-Conclusion: Therefore, B is True.",79,True
-4,i_initial,"You are given a small propositional logic system.
-Initially: P is True.
-Rules:
-- F = (not V) AND (not L).
-- L = P.
-- A = V.
-- V = (L) AND (P).
-Question: What is the truth value of F? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: P=True.
-From initial facts, P is True.
-Step 1: Using L = P. With values [P=True], we deduce L is True.
-Step 2: Using V = (L) AND (P). With values [L=True; P=True], we deduce V is True.
-Step 3: Using F = (not V) AND (not L). With values [L=True; V=True], we deduce F is False.
-Step 4: Using A = V. With values [V=True], we deduce A is True.
-Conclusion: Therefore, F is False.",79,True
-5,ii_inconsequential,"You are given a small propositional logic system.
 Initially: N is True; P is True; W is False.
 Rules:
-- M = W.
-- D = (M) AND (V).
-- V = not N.
-Question: What is the truth value of D? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: N=True; P=True; W=False.
-From initial facts, P is True.
-Step 1: Using M = W. With values [W=False], we deduce M is False.
-Step 2: Using V = not N. With values [N=True], we deduce V is False.
-Step 3: Using D = (M) AND (V). With values [M=False; V=False], we deduce D is False.
-Conclusion: Therefore, D is False.",96,True
+- M = (N) OR (W).
+- D = (V) AND (M).
+- V = (not P) OR (not M).
+Question: What is the truth value of D? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, N is true, P is true, W is false.
+Right away, P is true.
+Given that N is true, and because M is true when at least one of N or W is true, it follows that M is true.
+Given that M is true, and P is true, and because V is true when at least one of not P or not M is true, it follows that V is false.
+Given that V is false, and because D is true only when both V and M are true, it follows that D is false.
+In the end, D is false.",113,True
+2,i_initial,"You are given a small propositional logic system.
+Initially: P is True.
+Rules:
+- N = not T.
+- T = P.
+- X = P.
+- Y = N.
+- S = (not J) AND (T).
+- J = (not N) AND (T).
+Question: What is the truth value of S? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is true.
+Right away, P is true.
+Given that P is true, and because T matches P, it follows that T is true.
+Given that P is true, and because X matches P, it follows that X is true.
+Given that T is true, and because N matches not T, it follows that N is false.
+Given that N is false, and because Y matches N, it follows that Y is false.
+Given that N is false, and T is true, and because J is true only when both not N and T are true, it follows that J is true.
+Given that J is true, and because S is true only when both not J and T are true, it follows that S is false.
+In the end, S is false.",102,True
+3,i_initial,"You are given a small propositional logic system.
+Initially: P is False.
+Rules:
+- B = P.
+- V = K.
+- U = (not P) AND (not B).
+- K = (not P) AND (U).
+Question: What is the truth value of K? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is false.
+Right away, P is false.
+Given that P is false, and because B matches P, it follows that B is false.
+Given that B is false, and P is false, and because U is true only when both not P and not B are true, it follows that U is true.
+Given that P is false, and U is true, and because K is true only when both not P and U are true, it follows that K is true.
+Given that K is true, and because V matches K, it follows that V is true.
+In the end, K is true.",102,False
+4,i_initial,"You are given a small propositional logic system.
+Initially: P is False.
+Rules:
+- J = (P) OR (T).
+- M = (J) OR (not T).
+- T = not P.
+- A = J.
+- S = T.
+Question: What is the truth value of M? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is false.
+Right away, P is false.
+Given that P is false, and because T matches not P, it follows that T is true.
+Given that T is true, and because S matches T, it follows that S is true.
+Given that T is true, and because J is true when at least one of P or T is true, it follows that J is true.
+Given that J is true, and because M is true when at least one of J or not T is true, it follows that M is true.
+Given that J is true, and because A matches J, it follows that A is true.
+In the end, M is true.",102,False
+5,ii_inconsequential,"You are given a small propositional logic system.
+Initially: C is False; P is True; X is True.
+Rules:
+- I = (P) OR (not C).
+- Z = (O) AND (X).
+- Y = C.
+- O = not I.
+Question: What is the truth value of Z? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, C is false, P is true, X is true.
+Right away, P is true.
+Given that C is false, and because I is true when at least one of P or not C is true, it follows that I is true.
+Given that C is false, and because Y matches C, it follows that Y is false.
+Given that I is true, and because O matches not I, it follows that O is false.
+Given that O is false, and because Z is true only when both O and X are true, it follows that Z is false.
+In the end, Z is false.",114,True
 6,ii_inconsequential,"You are given a small propositional logic system.
-Initially: L is True; P is False; V is True.
+Initially: L is True; O is True; P is False.
 Rules:
-- Z = U.
+- V = (not L) OR (B).
+- M = O.
 - U = V.
-- E = (U) AND (not Z).
-Question: What is the truth value of E? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: L=True; P=False; V=True.
-From initial facts, P is False.
-Step 1: Using U = V. With values [V=True], we deduce U is True.
-Step 2: Using Z = U. With values [U=True], we deduce Z is True.
-Step 3: Using E = (U) AND (not Z). With values [U=True; Z=True], we deduce E is False.
-Conclusion: Therefore, E is False.",96,False
+- B = (not P) AND (not L).
+Question: What is the truth value of U? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, L is true, O is true, P is false.
+Right away, P is false.
+Given that O is true, and because M matches O, it follows that M is true.
+Given that L is true, and because B is true only when both not P and not L are true, it follows that B is false.
+Given that B is false, and L is true, and because V is true when at least one of not L or B is true, it follows that V is false.
+Given that V is false, and because U matches V, it follows that U is false.
+In the end, U is false.",124,False
 7,ii_inconsequential,"You are given a small propositional logic system.
-Initially: P is False; R is False.
+Initially: P is True; Q is True.
 Rules:
-- U = (not R) AND (B).
-- G = R.
-- B = R.
-- Z = P.
-- E = U.
-Question: What is the truth value of E? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: P=False; R=False.
-From initial facts, P is False.
-Step 1: Using G = R. With values [R=False], we deduce G is False.
-Step 2: Using B = R. With values [R=False], we deduce B is False.
-Step 3: Using Z = P. With values [P=False], we deduce Z is False.
-Step 4: Using U = (not R) AND (B). With values [B=False; R=False], we deduce U is False.
-Step 5: Using E = U. With values [U=False], we deduce E is False.
-Conclusion: Therefore, E is False.",89,False
+- N = C.
+- T = (not N) AND (Q).
+- C = (Q) OR (not P).
+Question: What is the truth value of T? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, P is true, Q is true.
+Right away, P is true.
+Given that Q is true, and because C is true when at least one of Q or not P is true, it follows that C is true.
+Given that C is true, and because N matches C, it follows that N is true.
+Given that N is true, and because T is true only when both not N and Q are true, it follows that T is false.
+In the end, T is false.",102,True
 8,ii_inconsequential,"You are given a small propositional logic system.
-Initially: M is True; P is True.
+Initially: D is True; P is False.
 Rules:
-- C = not D.
-- T = M.
-- O = (D) AND (not M).
-- D = not M.
-- A = not D.
-- E = (C) AND (not O).
-Question: What is the truth value of E? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
-Initial facts: M=True; P=True.
-From initial facts, P is True.
-Step 1: Using T = M. With values [M=True], we deduce T is True.
-Step 2: Using D = not M. With values [M=True], we deduce D is False.
-Step 3: Using A = not D. With values [D=False], we deduce A is True.
-Step 4: Using C = not D. With values [D=False], we deduce C is True.
-Step 5: Using O = (D) AND (not M). With values [D=False; M=True], we deduce O is False.
-Step 6: Using E = (C) AND (not O). With values [C=True; O=False], we deduce E is True.
-Conclusion: Therefore, E is True.",87,True
+- C = not Y.
+- Y = (D) OR (P).
+- V = not Y.
+- A = D.
+- F = (V) OR (not D).
+Question: What is the truth value of F? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, D is true, P is false.
+Right away, P is false.
+Given that D is true, and because Y is true when at least one of D or P is true, it follows that Y is true.
+Given that Y is true, and because V matches not Y, it follows that V is false.
+Given that D is true, and because A matches D, it follows that A is true.
+Given that D is true, and V is false, and because F is true when at least one of V or not D is true, it follows that F is false.
+Given that Y is true, and because C matches not Y, it follows that C is false.
+In the end, F is false.",113,False
 9,ii_inconsequential,"You are given a small propositional logic system.
-Initially: I is True; P is True; V is True.
+Initially: K is False; P is False; Z is False.
 Rules:
-- Z = not I.
-- F = (N) AND (V).
-- N = (not I) AND (G).
-- G = I.
-Question: What is the truth value of F? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: I=True; P=True; V=True.
-From initial facts, P is True.
-Step 1: Using Z = not I. With values [I=True], we deduce Z is False.
-Step 2: Using G = I. With values [I=True], we deduce G is True.
-Step 3: Using N = (not I) AND (G). With values [G=True; I=True], we deduce N is False.
-Step 4: Using F = (N) AND (V). With values [N=False; V=True], we deduce F is False.
-Conclusion: Therefore, F is False.",95,True
+- Y = (not P) AND (Z).
+- J = Y.
+- U = (J) AND (not Z).
+Question: What is the truth value of U? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, K is false, P is false, Z is false.
+Right away, P is false.
+Given that Z is false, and because Y is true only when both not P and Z are true, it follows that Y is false.
+Given that Y is false, and because J matches Y, it follows that J is false.
+Given that J is false, and because U is true only when both J and not Z are true, it follows that U is false.
+In the end, U is false.",114,False
 10,iii_derived,"You are given a small propositional logic system.
-Initially: S is False.
+Initially: D is True; V is False; W is False.
 Rules:
-- O = (S) AND (not P).
-- P = not S.
-- A = (S) AND (O).
-Question: What is the truth value of A? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: S=False.
-Step 1: Using P = not S. With values [S=False], we deduce P is True.
-Step 2: Using O = (S) AND (not P). With values [P=True; S=False], we deduce O is False.
-Step 3: Using A = (S) AND (O). With values [O=False; S=False], we deduce A is False.
-Conclusion: Therefore, A is False.",118,True
+- Y = not W.
+- C = V.
+- P = (C) AND (not W).
+- X = (D) AND (not P).
+Question: What is the truth value of X? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, D is true, V is false, W is false.
+Given that W is false, and because Y matches not W, it follows that Y is true.
+Given that V is false, and because C matches V, it follows that C is false.
+Given that C is false, and because P is true only when both C and not W are true, it follows that P is false.
+Given that D is true, and P is false, and because X is true only when both D and not P are true, it follows that X is true.
+In the end, X is true.",390,False
 11,iii_derived,"You are given a small propositional logic system.
-Initially: C is True; G is True; Z is False.
+Initially: G is False; N is False.
 Rules:
-- L = Z.
-- P = G.
-- K = not O.
-- F = P.
-- O = (not L) AND (P).
-- X = (O) AND (not G).
-Question: What is the truth value of X? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: C=True; G=True; Z=False.
-Step 1: Using L = Z. With values [Z=False], we deduce L is False.
-Step 2: Using P = G. With values [G=True], we deduce P is True.
-Step 3: Using F = P. With values [P=True], we deduce F is True.
-Step 4: Using O = (not L) AND (P). With values [L=False; P=True], we deduce O is True.
-Step 5: Using X = (O) AND (not G). With values [G=True; O=True], we deduce X is False.
-Step 6: Using K = not O. With values [O=True], we deduce K is False.
-Conclusion: Therefore, X is False.",195,True
-12,iii_derived,"You are given a small propositional logic system.
-Initially: N is False; O is False; R is True.
-Rules:
-- B = not O.
-- M = (O) AND (R).
-- P = (N) AND (not M).
-- D = not P.
-- Y = not M.
-Question: What is the truth value of D? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
-Initial facts: N=False; O=False; R=True.
-Step 1: Using B = not O. With values [O=False], we deduce B is True.
-Step 2: Using M = (O) AND (R). With values [O=False; R=True], we deduce M is False.
-Step 3: Using P = (N) AND (not M). With values [M=False; N=False], we deduce P is False.
-Step 4: Using D = not P. With values [P=False], we deduce D is True.
-Step 5: Using Y = not M. With values [M=False], we deduce Y is True.
-Conclusion: Therefore, D is True.",307,False
-13,iii_derived,"You are given a small propositional logic system.
-Initially: F is False.
-Rules:
-- D = not P.
-- I = D.
-- P = (not G) AND (F).
-- G = F.
-Question: What is the truth value of I? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
-Initial facts: F=False.
-Step 1: Using G = F. With values [F=False], we deduce G is False.
-Step 2: Using P = (not G) AND (F). With values [F=False; G=False], we deduce P is False.
-Step 3: Using D = not P. With values [P=False], we deduce D is True.
-Step 4: Using I = D. With values [D=True], we deduce I is True.
-Conclusion: Therefore, I is True.",203,False
-14,iii_derived,"You are given a small propositional logic system.
-Initially: Q is True.
-Rules:
-- Y = (not Q) AND (not P).
-- P = not Q.
-- X = not Y.
-Question: What is the truth value of X? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
-Initial facts: Q=True.
-Step 1: Using P = not Q. With values [Q=True], we deduce P is False.
-Step 2: Using Y = (not Q) AND (not P). With values [P=False; Q=True], we deduce Y is False.
-Step 3: Using X = not Y. With values [Y=False], we deduce X is True.
-Conclusion: Therefore, X is True.",116,False
-15,iv_indeterminate,"You are given a small propositional logic system.
-Initially: X is False.
-Rules:
-- L = (not X) AND (not A).
-- E = X.
-- A = (not X) AND (E).
-Question: What is the truth value of L? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
-Initial facts: X=False.
-Step 1: Using E = X. With values [X=False], we deduce E is False.
-Step 2: Using A = (not X) AND (E). With values [E=False; X=False], we deduce A is False.
-Step 3: Using L = (not X) AND (not A). With values [A=False; X=False], we deduce L is True.
-Conclusion: Therefore, L is True.",,Unknown
-16,iv_indeterminate,"You are given a small propositional logic system.
-Initially: M is False; Z is True.
-Rules:
-- L = (A) AND (not Z).
-- H = M.
-- Y = not M.
-- A = (not Z) AND (not E).
-- E = M.
-Question: What is the truth value of L? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: M=False; Z=True.
-Step 1: Using H = M. With values [M=False], we deduce H is False.
-Step 2: Using Y = not M. With values [M=False], we deduce Y is True.
-Step 3: Using E = M. With values [M=False], we deduce E is False.
-Step 4: Using A = (not Z) AND (not E). With values [E=False; Z=True], we deduce A is False.
-Step 5: Using L = (A) AND (not Z). With values [A=False; Z=True], we deduce L is False.
-Conclusion: Therefore, L is False.",,Unknown
-17,iv_indeterminate,"You are given a small propositional logic system.
-Initially: D is False.
-Rules:
-- S = (R) AND (not D).
-- W = R.
-- O = R.
-- Q = D.
-- R = Q.
-Question: What is the truth value of S? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: D=False.
-Step 1: Using Q = D. With values [D=False], we deduce Q is False.
-Step 2: Using R = Q. With values [Q=False], we deduce R is False.
-Step 3: Using S = (R) AND (not D). With values [D=False; R=False], we deduce S is False.
-Step 4: Using W = R. With values [R=False], we deduce W is False.
-Step 5: Using O = R. With values [R=False], we deduce O is False.
-Conclusion: Therefore, S is False.",,Unknown
-18,iv_indeterminate,"You are given a small propositional logic system.
-Initially: G is True.
-Rules:
-- A = (K) AND (not E).
-- X = E.
-- R = (not A) AND (not E).
-- K = G.
-- L = not K.
-- E = G.
-Question: What is the truth value of R? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: G=True.
-Step 1: Using K = G. With values [G=True], we deduce K is True.
-Step 2: Using L = not K. With values [K=True], we deduce L is False.
-Step 3: Using E = G. With values [G=True], we deduce E is True.
-Step 4: Using A = (K) AND (not E). With values [E=True; K=True], we deduce A is False.
-Step 5: Using X = E. With values [E=True], we deduce X is True.
-Step 6: Using R = (not A) AND (not E). With values [A=False; E=True], we deduce R is False.
-Conclusion: Therefore, R is False.",,Unknown
-19,iv_indeterminate,"You are given a small propositional logic system.
-Initially: Y is False.
-Rules:
-- N = Y.
-- H = (C) AND (not Y).
-- C = (Y) AND (N).
-Question: What is the truth value of H? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: Y=False.
-Step 1: Using N = Y. With values [Y=False], we deduce N is False.
-Step 2: Using C = (Y) AND (N). With values [N=False; Y=False], we deduce C is False.
-Step 3: Using H = (C) AND (not Y). With values [C=False; Y=False], we deduce H is False.
-Conclusion: Therefore, H is False.",,Unknown
-20,v_output,"You are given a small propositional logic system.
-Initially: S is True; X is False.
-Rules:
-- Y = not Q.
-- O = not X.
-- I = X.
-- Q = (not J) AND (not X).
-- J = not X.
-- P = (not S) AND (Y).
-Question: What is the truth value of P? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: S=True; X=False.
-Step 1: Using O = not X. With values [X=False], we deduce O is True.
-Step 2: Using I = X. With values [X=False], we deduce I is False.
-Step 3: Using J = not X. With values [X=False], we deduce J is True.
-Step 4: Using Q = (not J) AND (not X). With values [J=True; X=False], we deduce Q is False.
-Step 5: Using Y = not Q. With values [Q=False], we deduce Y is True.
-Step 6: Using P = (not S) AND (Y). With values [S=True; Y=True], we deduce P is False.
-Conclusion: Therefore, P is False.",508,False
-21,v_output,"You are given a small propositional logic system.
-Initially: U is False.
-Rules:
+- P = not G.
 - H = not R.
-- W = not U.
-- P = (not R) AND (not D).
-- D = not R.
-- R = not W.
-Question: What is the truth value of P? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: U=False.
-Step 1: Using W = not U. With values [U=False], we deduce W is True.
-Step 2: Using R = not W. With values [W=True], we deduce R is False.
-Step 3: Using H = not R. With values [R=False], we deduce H is True.
-Step 4: Using D = not R. With values [R=False], we deduce D is True.
-Step 5: Using P = (not R) AND (not D). With values [D=True; R=False], we deduce P is False.
-Conclusion: Therefore, P is False.",416,False
+- V = not P.
+- E = (not G) AND (not N).
+- R = (P) AND (E).
+- B = (R) AND (not N).
+Question: What is the truth value of B? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, G is false, N is false.
+Given that G is false, and because P matches not G, it follows that P is true.
+Given that P is true, and because V matches not P, it follows that V is false.
+Given that G is false, and N is false, and because E is true only when both not G and not N are true, it follows that E is true.
+Given that E is true, and P is true, and because R is true only when both P and E are true, it follows that R is true.
+Given that N is false, and R is true, and because B is true only when both R and not N are true, it follows that B is true.
+Given that R is true, and because H matches not R, it follows that H is false.
+In the end, B is true.",194,True
+12,iii_derived,"You are given a small propositional logic system.
+Initially: L is False; X is True.
+Rules:
+- J = (not L) OR (not P).
+- P = (X) AND (not C).
+- C = (X) AND (L).
+- H = (P) AND (J).
+Question: What is the truth value of H? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, L is false, X is true.
+Given that L is false, and because J is true when at least one of not L or not P is true, it follows that J is true.
+Given that L is false, and because C is true only when both X and L are true, it follows that C is false.
+Given that C is false, and X is true, and because P is true only when both X and not C are true, it follows that P is true.
+Given that J is true, and P is true, and because H is true only when both P and J are true, it follows that H is true.
+In the end, H is true.",204,True
+13,iii_derived,"You are given a small propositional logic system.
+Initially: S is True.
+Rules:
+- Z = not C.
+- P = (S) AND (not C).
+- F = not P.
+- C = not S.
+- J = P.
+Question: What is the truth value of F? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, S is true.
+Given that S is true, and because C matches not S, it follows that C is false.
+Given that C is false, and because Z matches not C, it follows that Z is true.
+Given that C is false, and S is true, and because P is true only when both S and not C are true, it follows that P is true.
+Given that P is true, and because F matches not P, it follows that F is false.
+Given that P is true, and because J matches P, it follows that J is true.
+In the end, F is false.",321,True
+14,iii_derived,"You are given a small propositional logic system.
+Initially: G is False; O is True; R is False.
+Rules:
+- F = not G.
+- B = not P.
+- X = (not O) AND (G).
+- I = (R) OR (not P).
+- P = (R) OR (not X).
+Question: What is the truth value of I? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, G is false, O is true, R is false.
+Given that G is false, and because F matches not G, it follows that F is true.
+Given that G is false, and because X is true only when both not O and G are true, it follows that X is false.
+Given that X is false, and because P is true when at least one of R or not X is true, it follows that P is true.
+Given that P is true, and because B matches not P, it follows that B is false.
+Given that P is true, and R is false, and because I is true when at least one of R or not P is true, it follows that I is false.
+In the end, I is false.",361,True
+15,iv_indeterminate,"You are given a small propositional logic system.
+Initially: G is False; I is False; K is False.
+Rules:
+- O = (not G) AND (V).
+- V = K.
+- H = not V.
+- Y = (not G) AND (not O).
+- S = not V.
+Question: What is the truth value of Y? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, G is false, I is false, K is false.
+Given that K is false, and because V matches K, it follows that V is false.
+Given that V is false, and because H matches not V, it follows that H is true.
+Given that V is false, and because S matches not V, it follows that S is true.
+Given that V is false, and because O is true only when both not G and V are true, it follows that O is false.
+Given that G is false, and O is false, and because Y is true only when both not G and not O are true, it follows that Y is true.
+In the end, Y is true.",,Unknown
+16,iv_indeterminate,"You are given a small propositional logic system.
+Initially: V is False.
+Rules:
+- K = not V.
+- T = A.
+- A = (V) OR (K).
+Question: What is the truth value of T? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, V is false.
+Given that V is false, and because K matches not V, it follows that K is true.
+Given that K is true, and because A is true when at least one of V or K is true, it follows that A is true.
+Given that A is true, and because T matches A, it follows that T is true.
+In the end, T is true.",,Unknown
+17,iv_indeterminate,"You are given a small propositional logic system.
+Initially: I is True.
+Rules:
+- K = (W) AND (I).
+- V = not K.
+- W = I.
+- B = not I.
+Question: What is the truth value of V? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, I is true.
+Given that I is true, and because W matches I, it follows that W is true.
+Given that I is true, and because B matches not I, it follows that B is false.
+Given that I is true, and W is true, and because K is true only when both W and I are true, it follows that K is true.
+Given that K is true, and because V matches not K, it follows that V is false.
+In the end, V is false.",,Unknown
+18,iv_indeterminate,"You are given a small propositional logic system.
+Initially: L is False; W is False.
+Rules:
+- Z = not U.
+- I = L.
+- V = L.
+- U = not I.
+Question: What is the truth value of Z? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, L is false, W is false.
+Given that L is false, and because I matches L, it follows that I is false.
+Given that L is false, and because V matches L, it follows that V is false.
+Given that I is false, and because U matches not I, it follows that U is true.
+Given that U is true, and because Z matches not U, it follows that Z is false.
+In the end, Z is false.",,Unknown
+19,iv_indeterminate,"You are given a small propositional logic system.
+Initially: C is True; F is True; I is True.
+Rules:
+- H = I.
+- U = (I) AND (L).
+- L = (not H) AND (not I).
+Question: What is the truth value of U? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, C is true, F is true, I is true.
+Given that I is true, and because H matches I, it follows that H is true.
+Given that H is true, and because L is true only when both not H and not I are true, it follows that L is false.
+Given that L is false, and because U is true only when both I and L are true, it follows that U is false.
+In the end, U is false.",,Unknown
+20,v_output,"You are given a small propositional logic system.
+Initially: O is True; V is False.
+Rules:
+- H = S.
+- G = (O) AND (S).
+- Y = (V) OR (not S).
+- X = not V.
+- P = (G) OR (not Y).
+- S = (V) AND (not O).
+Question: What is the truth value of P? Answer 'True' or 'False'.",False,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, O is true, V is false.
+Given that V is false, and because X matches not V, it follows that X is true.
+Given that O is true, and because S is true only when both V and not O are true, it follows that S is false.
+Given that S is false, and because H matches S, it follows that H is false.
+Given that S is false, and because G is true only when both O and S are true, it follows that G is false.
+Given that S is false, and because Y is true when at least one of V or not S is true, it follows that Y is true.
+Given that G is false, and Y is true, and because P is true when at least one of G or not Y is true, it follows that P is false.
+In the end, P is false.",725,False
+21,v_output,"You are given a small propositional logic system.
+Initially: L is True; Y is True.
+Rules:
+- K = (not W) AND (L).
+- W = (not L) AND (not Y).
+- P = (O) AND (K).
+- V = L.
+- O = K.
+Question: What is the truth value of P? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, L is true, Y is true.
+Given that L is true, and because W is true only when both not L and not Y are true, it follows that W is false.
+Given that L is true, and because V matches L, it follows that V is true.
+Given that L is true, and W is false, and because K is true only when both not W and L are true, it follows that K is true.
+Given that K is true, and because O matches K, it follows that O is true.
+Given that K is true, and O is true, and because P is true only when both O and K are true, it follows that P is true.
+In the end, P is true.",558,True
 22,v_output,"You are given a small propositional logic system.
-Initially: H is False.
+Initially: I is False.
 Rules:
-- Q = not P.
-- P = (not Z) AND (A).
-- D = not A.
-- A = H.
-- Z = H.
-Question: What is the truth value of P? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: H=False.
-Step 1: Using A = H. With values [H=False], we deduce A is False.
-Step 2: Using Z = H. With values [H=False], we deduce Z is False.
-Step 3: Using P = (not Z) AND (A). With values [A=False; Z=False], we deduce P is False.
-Step 4: Using D = not A. With values [A=False], we deduce D is True.
-Step 5: Using Q = not P. With values [P=False], we deduce Q is True.
-Conclusion: Therefore, P is False.",269,False
+- R = not T.
+- T = not I.
+- P = not R.
+Question: What is the truth value of P? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, I is false.
+Given that I is false, and because T matches not I, it follows that T is true.
+Given that T is true, and because R matches not T, it follows that R is false.
+Given that R is false, and because P matches not R, it follows that P is true.
+In the end, P is true.",340,True
 23,v_output,"You are given a small propositional logic system.
-Initially: M is True.
+Initially: A is True; C is True; Q is False.
 Rules:
-- Q = not H.
-- P = (Z) AND (not M).
-- O = not P.
-- Z = (M) AND (H).
-- H = not M.
-Question: What is the truth value of P? Answer 'True' or 'False'.",False,"Let’s solve this step by step.
-Initial facts: M=True.
-Step 1: Using H = not M. With values [M=True], we deduce H is False.
-Step 2: Using Q = not H. With values [H=False], we deduce Q is True.
-Step 3: Using Z = (M) AND (H). With values [H=False; M=True], we deduce Z is False.
-Step 4: Using P = (Z) AND (not M). With values [M=True; Z=False], we deduce P is False.
-Step 5: Using O = not P. With values [P=False], we deduce O is True.
-Conclusion: Therefore, P is False.",357,False
+- P = (not F) AND (not R).
+- R = not A.
+- F = not C.
+Question: What is the truth value of P? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, A is true, C is true, Q is false.
+Given that A is true, and because R matches not A, it follows that R is false.
+Given that C is true, and because F matches not C, it follows that F is false.
+Given that F is false, and R is false, and because P is true only when both not F and not R are true, it follows that P is true.
+In the end, P is true.",345,True
 24,v_output,"You are given a small propositional logic system.
-Initially: G is False; V is False.
+Initially: N is True; R is False; V is False.
 Rules:
-- Z = (not V) AND (Q).
-- P = not Z.
-- M = V.
-- Q = (G) AND (D).
-- U = Z.
-- D = (not V) AND (not G).
-Question: What is the truth value of P? Answer 'True' or 'False'.",True,"Let’s solve this step by step.
-Initial facts: G=False; V=False.
-Step 1: Using M = V. With values [V=False], we deduce M is False.
-Step 2: Using D = (not V) AND (not G). With values [G=False; V=False], we deduce D is True.
-Step 3: Using Q = (G) AND (D). With values [D=True; G=False], we deduce Q is False.
-Step 4: Using Z = (not V) AND (Q). With values [Q=False; V=False], we deduce Z is False.
-Step 5: Using P = not Z. With values [Z=False], we deduce P is True.
-Step 6: Using U = Z. With values [Z=False], we deduce U is False.
-Conclusion: Therefore, P is True.",458,True
+- J = (N) OR (not V).
+- A = (J) OR (R).
+- T = P.
+- P = (A) OR (not V).
+Question: What is the truth value of P? Answer 'True' or 'False'.",True,"I will reason forward from the initial facts until everything relevant is settled.
+At the start, N is true, R is false, V is false.
+Given that N is true, and because J is true when at least one of N or not V is true, it follows that J is true.
+Given that J is true, and because A is true when at least one of J or R is true, it follows that A is true.
+Given that A is true, and because P is true when at least one of A or not V is true, it follows that P is true.
+Given that P is true, and because T matches P, it follows that T is true.
+In the end, P is true.",391,True

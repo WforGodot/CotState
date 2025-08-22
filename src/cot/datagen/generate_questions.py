@@ -125,57 +125,22 @@ def _rule_map_by_head(inst_rules: List[Dict]) -> Dict[str, int]:
     return mp
 
 def _compute_minimal_support(inst: Dict) -> Set[str]:
-    """
-    Backtrack from output var and collect a minimal set of variables actually necessary
-    under UNARY/AND semantics. (We don't generate OR in the builder.)
-    """
-    rules = inst["rules"]
     steps = inst["steps"]
-    status = inst["status_timeline"]
-    out = inst["output_var"]
-
-    final_vals = _final_values(status)
-    rule_by_head = _rule_map_by_head(rules)
-
-    # Map learned var -> the step index where it was learned
-    learned_step = {s["learned"]: i for i, s in enumerate(steps)}
+    # Map var -> its step dict
+    learned = {s["learned"]: s for s in steps}
 
     support: Set[str] = set()
-
     def need(var: str):
         if var in support:
             return
         support.add(var)
-        # If var was initial (no step), stop
-        if var not in learned_step:
-            return
-        r = rules[steps[learned_step[var]]["reason"]]
-        op = r["op"]
-        ins = r["inputs"]
-        if op == "UNARY":
-            _s, p = ins[0]
-            need(p)
-        elif op == "AND":
-            for (_s, p) in ins:
-                need(p)
-        else:
-            # Shouldn't happen with current builder (no OR/CLAUSE)
-            # Fallback: include all parents that are True contributors
-            true_parents = []
-            for (s, p) in ins:
-                val = final_vals.get(p, None)
-                if val is None:
-                    continue
-                lit_val = val if s == '+' else (not val)
-                if lit_val is True:
-                    true_parents.append(p)
-            # If none, include all to be conservative
-            parents = true_parents or [p for (_s, p) in ins]
-            # Break ties by earlier first-time
-            parents.sort(key=lambda x: _first_time(status, x))
-            need(parents[0])
+        s = learned.get(var)
+        if not s:
+            return  # initial var
+        for parent in s.get("values_used", {}).keys():
+            need(parent)
 
-    need(out)
+    need(inst["output_var"])
     return support
 
 
