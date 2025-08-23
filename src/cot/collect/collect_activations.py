@@ -35,10 +35,22 @@ def _paths():
     return datagen_csv, out_dir
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Collect activations after P-commitment in CoTs (batched, bucketed).")
+    p = argparse.ArgumentParser(description="Collect activations around the split in CoTs (batched, bucketed).")
     for r in REGIMES:
-        p.add_argument(f"--{r}_tokens_after", type=int, default=None,
-                       help=f"Tokens after split to keep for {r} (-1 for all).")
+        # New: tuple override "before,after" (e.g., "4,5", "1,-1").
+        p.add_argument(
+            f"--{r}_tokens_around",
+            type=str,
+            default=None,
+            help=f"Tokens to keep for {r} as 'before,after' where each is an int and -1 means all.",
+        )
+        # Backward-compatibility: allow specifying only the 'after' count.
+        p.add_argument(
+            f"--{r}_tokens_after",
+            type=int,
+            default=None,
+            help=f"[Deprecated] Only the 'after' count for {r} (-1 for all).",
+        )
         p.add_argument(f"--{r}_n", type=int, default=None,
                        help=f"Number of examples from {r} to use.")
     p.add_argument("--device", type=str, default=cfg.DEVICE)
@@ -56,17 +68,49 @@ def parse_args() -> argparse.Namespace:
                    default=cfg.TRUST_REMOTE_CODE)
     return p.parse_args()
 
-def build_selection_maps(args: argparse.Namespace) -> Tuple[Dict[str, int], Dict[str, int]]:
-    tokens_after = {}
-    for r in REGIMES:
-        override = getattr(args, f"{r}_tokens_after")
-        tokens_after[r] = cfg.TOKENS_AFTER_BY_REGIME.get(r, -1) if override is None else override
+def _parse_tuple_flag(s: Optional[str]) -> Optional[Tuple[int, int]]:
+    if s is None:
+        return None
+    try:
+        parts = [p.strip() for p in s.split(",")]
+        if len(parts) != 2:
+            raise ValueError
+        return int(parts[0]), int(parts[1])
+    except Exception:
+        raise ValueError(f"Invalid --*_tokens_around flag value '{s}'. Use 'before,after' with integers.")
 
-    counts = {}
+def build_selection_maps(args: argparse.Namespace) -> Tuple[Dict[str, Tuple[int, int]], Dict[str, int]]:
+    """
+    Returns:
+      tok_around_by_regime: {'i_initial': (n_before, n_after), ...} where -1 means all on that side
+      counts_by_regime: {'i_initial': N_examples, ...}
+    """
+    tok_around_by_regime: Dict[str, Tuple[int, int]] = {}
+    for r in REGIMES:
+        # CLI overrides first
+        override = _parse_tuple_flag(getattr(args, f"{r}_tokens_around"))
+        if override is not None:
+            tok_around_by_regime[r] = override
+            continue
+        after_only_cli = getattr(args, f"{r}_tokens_after")
+        if after_only_cli is not None:
+            tok_around_by_regime[r] = (0, int(after_only_cli))
+            continue
+        # Then config: new dict if present
+        around_cfg = getattr(cfg, "TOKENS_AROUND_BY_REGIME", {})
+        if r in around_cfg:
+            before, after = around_cfg[r]
+            tok_around_by_regime[r] = (int(before), int(after))
+            continue
+        # Fallbacks: legacy single-side configs
+        after_only = getattr(cfg, "TOKENS_AFTER_BY_REGIME", {}).get(r, -1)
+        tok_around_by_regime[r] = (0, int(after_only))
+
+    counts: Dict[str, int] = {}
     for r in REGIMES:
         override = getattr(args, f"{r}_n")
         counts[r] = cfg.REGIME_SAMPLE_COUNTS.get(r, 0) if override is None else override
-    return tokens_after, counts
+    return tok_around_by_regime, counts
 
 def select_rows_by_regime(df: pd.DataFrame, counts: Dict[str, int]) -> pd.DataFrame:
     df = df.copy()
@@ -86,7 +130,7 @@ def select_rows_by_regime(df: pd.DataFrame, counts: Dict[str, int]) -> pd.DataFr
 
 def main():
     args = parse_args()
-    tokens_after_by_regime, counts_by_regime = build_selection_maps(args)
+    tok_around_by_regime, counts_by_regime = build_selection_maps(args)
     datagen_csv, out_dir = _paths()
     ensure_dir(out_dir)
 
@@ -136,9 +180,15 @@ def main():
             continue
 
         seq_len = int(tokens.shape[1])
-        n_after = tokens_after_by_regime.get(regime, -1)
-        sel_end = seq_len if (n_after is None or n_after < 0) else min(seq_len, split_idx + n_after)
-        if sel_end <= split_idx:
+        n_before, n_after = tok_around_by_regime.get(regime, (0, -1))
+        # Before range [a_before, split)
+        a_before = 0 if (n_before is None or n_before < 0) else max(0, split_idx - int(n_before))
+        b_before = split_idx
+        # After range [split, b_after)
+        a_after = split_idx
+        b_after = seq_len if (n_after is None or n_after < 0) else min(seq_len, split_idx + int(n_after))
+        # Skip if both empty
+        if not (a_before < b_before or a_after < b_after):
             continue
 
         pretokenized.append({
@@ -148,7 +198,10 @@ def main():
             "tokens": tokens.cpu(),   # keep on CPU until batch forward
             "seq_len": seq_len,
             "split": split_idx,
-            "sel_end": sel_end,
+            "a_before": a_before,
+            "b_before": b_before,
+            "a_after": a_after,
+            "b_after": b_after,
         })
 
     if len(pretokenized) == 0:
@@ -171,7 +224,8 @@ def main():
 
     # Precompute total tokens to keep for preallocation
     for ex in pretokenized:
-        total_kept_tokens += int(ex["sel_end"] - ex["split"])
+        total_kept_tokens += int(max(0, ex["b_before"] - ex["a_before"]))
+        total_kept_tokens += int(max(0, ex["b_after"] - ex["a_after"]))
 
     batch_idx_global = 0
     for key in sorted(buckets.keys()):
@@ -184,7 +238,8 @@ def main():
 
             token_tensors = [ex["tokens"] for ex in chunk]  # each [1, L_i]
             split_tok = [ex["split"] for ex in chunk]
-            sel_ranges = [(ex["split"], ex["sel_end"]) for ex in chunk]
+            before_ranges = [(ex["a_before"], ex["b_before"]) for ex in chunk]
+            after_ranges = [(ex["a_after"], ex["b_after"]) for ex in chunk]
             seq_lens = [ex["seq_len"] for ex in chunk]
             regimes = [ex["regime"] for ex in chunk]
             pvals = [ex["p_value"] for ex in chunk]
@@ -211,29 +266,64 @@ def main():
                         mmap_path, dtype=np.float16, mode='w+', shape=(total_kept_tokens, d_model)
                     )
                     write_idx[lyr] = 0
-                for i, (a, b) in enumerate(sel_ranges):
-                    sel = acts[i, a:b, :].detach().cpu().numpy().astype(np.float16, copy=False)
-                    n = sel.shape[0]
-                    s = write_idx[lyr]
-                    e = s + n
-                    feats_mmap[lyr][s:e, :] = sel
-                    write_idx[lyr] = e
+                for i, ((ab, bb), (aa, ba)) in enumerate(zip(before_ranges, after_ranges)):
+                    # before segment
+                    if bb > ab:
+                        sel_bef = acts[i, ab:bb, :].detach().cpu().numpy().astype(np.float16, copy=False)
+                        n = sel_bef.shape[0]
+                        s = write_idx[lyr]
+                        e = s + n
+                        feats_mmap[lyr][s:e, :] = sel_bef
+                        write_idx[lyr] = e
+                    # after segment
+                    if ba > aa:
+                        sel_aft = acts[i, aa:ba, :].detach().cpu().numpy().astype(np.float16, copy=False)
+                        n = sel_aft.shape[0]
+                        s = write_idx[lyr]
+                        e = s + n
+                        feats_mmap[lyr][s:e, :] = sel_aft
+                        write_idx[lyr] = e
                 del acts  # shorten GPU lifetime
 
             # Labels + safe debug decode (no padded tail)
-            for i, (ex_id, regime, p_val, (a, b), L) in enumerate(zip(ex_ids, regimes, pvals, sel_ranges, seq_lens)):
-                for k, tok_idx in enumerate(range(a, b)):
-                    labels.append((ex_id, regime, p_val, k, tok_idx))
+            for i, (ex_id, regime, p_val, (ab, bb), (aa, ba), L, sp) in enumerate(
+                zip(ex_ids, regimes, pvals, before_ranges, after_ranges, seq_lens, split_tok)
+            ):
+                # before tokens
+                for tok_idx in range(ab, bb):
+                    offset = int(tok_idx - sp)
+                    labels.append((ex_id, regime, p_val, offset, tok_idx))
+                # after tokens
+                for tok_idx in range(aa, ba):
+                    offset = int(tok_idx - sp)
+                    labels.append((ex_id, regime, p_val, offset, tok_idx))
 
                 if len(debug_lines) < cfg.MAX_DEBUG:
                     row = batch_tokens[i]
-                    pre_text  = decode_slice(model, row, 0, a)
-                    mid_text  = decode_slice(model, row, a, b)
-                    post_text = decode_slice(model, row, b, L)  # <- stop at true length
-                    dbg = pre_text + "[[" + mid_text + "]]" + post_text
+                    a = ab
+                    b = bb
+                    a2 = aa
+                    b2 = ba
+                    # Build a view that brackets the kept before and after segments.
+                    parts = []
+                    # prefix before kept-before
+                    parts.append(decode_slice(model, row, 0, a))
+                    # kept-before
+                    if b > a:
+                        parts.append("[[" + decode_slice(model, row, a, b) + "]]")
+                    # between before and after (usually empty, as b == a2 == split)
+                    if a2 > b:
+                        parts.append(decode_slice(model, row, b, a2))
+                    # kept-after
+                    if b2 > a2:
+                        parts.append("[[" + decode_slice(model, row, a2, b2) + "]]")
+                    # tail
+                    parts.append(decode_slice(model, row, b2, L))
+                    dbg = "".join(parts)
                     if len(dbg) > 1200:
                         dbg = dbg[:600] + " ... " + dbg[-600:]
-                    header = f"(id={ex_id}, regime={regime}, p={p_val}, split_tok={a}, kept={b-a})"
+                    kept_total = max(0, bb-ab) + max(0, ba-aa)
+                    header = f"(id={ex_id}, regime={regime}, p={p_val}, split_tok={split_tok[i]}, kept={kept_total})"
                     debug_lines.append(header + "\n" + dbg + "\n")
 
             # ---- end-of-batch cleanup to avoid VRAM growth ----
@@ -308,7 +398,7 @@ def main():
         "total_selected_tokens": int(labels_df.shape[0]),
         "unique_examples": int(labels_df["example_id"].nunique()),
         "counts_by_regime": {r: int((rows["regime"] == r).sum()) for r in REGIMES},
-        "tokens_after_by_regime": {r: int(v) for r, v in tokens_after_by_regime.items()},
+        "tokens_around_by_regime": {r: [int(x) for x in tok_around_by_regime[r]] for r in REGIMES},
         "inputs_csv": str(datagen_csv),
         "features_file": str(out_npz),
         "labels_file": str(labels_csv),

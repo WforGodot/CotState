@@ -26,6 +26,10 @@ GROUP_COL = "example_id"        # to group all tokens from the same example
 REGIME_COL = "regime"           # for optional per-regime breakdown in report
 OFFSET_COL = "offset_from_split"  # optional slice reporting
 
+# Optional: restrict which regimes' tokens to use. Set to a list of regime
+# names (e.g., ["i_initial", "iii_derived"]) or leave as None to use all.
+REGIMES_TO_USE = ["v_output"]  # type: list[str] | None
+
 # --- Model & evaluation ---
 CLASSIFIER = "ridge"  # "ridge" or "logreg"
 RIDGE_ALPHA = 1.0     # alpha for RidgeClassifier (L2). Ignored if CLASSIFIER="logreg"
@@ -47,7 +51,7 @@ FILTER_OFFSET_EQ = None    # exactly equal to this offset (e.g., 0), or None
 FILTER_OFFSET_MAX = None  # include offsets <= this value (e.g., 1 includes 0 and 1)
 # Inclusive range filter: set to a 2-tuple/list (lo, hi). Use None to leave one side open.
 # Examples: (0, 1) keeps 0 and 1; (None, 3) keeps <=3; (2, None) keeps >=2
-FILTER_OFFSET_RANGE = (3,10)  # type: tuple[int | None, int | None] | None
+FILTER_OFFSET_RANGE = (-500, -25)  # type: tuple[int | None, int | None] | None
 
 # Pretty table formatting in TXT
 COL_WIDTHS = dict(layer=6, n=9, comps=7, acc=10, auroc=10, ap=10, f1=10)

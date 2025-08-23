@@ -49,6 +49,15 @@ def _read_labels(labels_csv: Path) -> pd.DataFrame:
     if cfg.GROUP_COL not in df.columns:
         raise ValueError(f"Missing '{cfg.GROUP_COL}' in labels CSV")
 
+    # Optional regime selection
+    regimes_to_use = getattr(cfg, 'REGIMES_TO_USE', None)
+    if regimes_to_use is not None:
+        if cfg.REGIME_COL not in df.columns:
+            raise ValueError(f"Requested regime filtering but '{cfg.REGIME_COL}' not present in labels.")
+        keep = set(regimes_to_use)
+        df = df[df[cfg.REGIME_COL].isin(keep)]
+
+    # Offset-based filtering (supports negative values correctly by ensuring numeric dtype)
     off_col = cfg.OFFSET_COL
     has_any_filter = (
         cfg.FILTER_OFFSET_EQ is not None
@@ -58,6 +67,9 @@ def _read_labels(labels_csv: Path) -> pd.DataFrame:
     if has_any_filter:
         if off_col not in df.columns:
             raise ValueError(f"Requested offset filtering but '{off_col}' not present in labels.")
+        # Force numeric for robust comparisons with negatives; drop rows where parsing failed
+        df[off_col] = pd.to_numeric(df[off_col], errors='coerce')
+        df = df.dropna(subset=[off_col])
         rng = getattr(cfg, 'FILTER_OFFSET_RANGE', None)
         if isinstance(rng, (tuple, list)) and len(rng) == 2:
             lo, hi = rng
@@ -512,6 +524,10 @@ def main():
 
     # Filters
     filters = []
+    # Regime filter header note
+    regimes_to_use = getattr(cfg, 'REGIMES_TO_USE', None)
+    if regimes_to_use is not None:
+        filters.append(f"regime in {{{', '.join(map(str, regimes_to_use))}}}")
     rng = getattr(cfg, 'FILTER_OFFSET_RANGE', None)
     if isinstance(rng, (tuple, list)) and len(rng) == 2:
         lo, hi = rng
