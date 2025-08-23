@@ -1,44 +1,104 @@
 """
-Installs all required libraries for this project, including:
-- torch==2.8.0+cu126, torchaudio==2.8.0+cu126, torchvision==0.23.0+cu126
-- transformers==4.55.2, accelerate==1.10.0, datasets==4.0.0
-- scikit-learn==1.7.1, matplotlib==3.10.5, ipywidgets==8.1.7, tqdm==4.67.1
-- bitsandbytes==0.46.1
-- transformer_lens==2.16.1
+Ensures torch/torchaudio/torchvision are installed (any version/CUDA).
+Then force-reinstalls numpy and the rest of the stack.
 
-Behavior:
-- Does NOT reinstall torch/torchaudio/torchvision if already at the correct versions.
-- Reinstalls NumPy ONLY if a PyTorch component was (re)installed.
-- Saves a manifest of installed versions to outputs/install/manifest.json.
-- Re-runs overwrite the manifest and logs.
+- Leaves existing torch stack alone if present.
+- Installs any missing torch components from PyPI (no CUDA/index pin).
+- Force-reinstalls: numpy, transformers, accelerate, datasets, scikit-learn,
+  matplotlib, ipywidgets, tqdm, bitsandbytes, transformer_lens.
+- Saves manifest to outputs/install/manifest.json.
+- Overwrites pip log and manifest on re-runs.
 """
 import json
 import subprocess
 import sys
 from pathlib import Path
+import importlib
 
-PYTORCH_INDEX_URL = "https://download.pytorch.org/whl/cu126"
-DESIRED = {
-    "torch": "2.8.0+cu126",
-    "torchaudio": "2.8.0+cu126",
-    "torchvision": "0.23.0+cu126",
-}
-DESIRED_CUDA = "12.6"  # torch.version.cuda should report this for cu126 wheels
-
+# Pinned non-PyTorch stack (as in your original script)
+PINNED_PKGS = [
+    "numpy",  # will be force-reinstalled (latest available unless pinned here)
+    "transformers==4.55.2",
+    "accelerate==1.10.0",
+    "datasets==4.0.0",
+    "scikit-learn==1.7.1",
+    "matplotlib==3.10.5",
+    "ipywidgets==8.1.7",
+    "tqdm==4.67.1",
+    "bitsandbytes==0.46.1",
+    "transformer_lens==2.16.1",
+]
 
 def pip_install(args, log_path: Path):
     cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", "--log", str(log_path)] + args
     print("pip install", " ".join(args))
     subprocess.check_call(cmd)
 
-
-def get_mod_version(mod_name):
+def mod_version(name):
     try:
-        mod = __import__(mod_name)
-        return getattr(mod, "__version__", None), mod
+        m = __import__(name)
+        return getattr(m, "__version__", None)
     except Exception:
-        return None, None
+        return None
 
+def ensure_pt_stack(log_file: Path):
+    """Ensure torch, torchaudio, torchvision are importable (any version/CUDA)."""
+    needed = []
+    for name in ["torch", "torchaudio", "torchvision"]:
+        v = mod_version(name)
+        if v is None:
+            needed.append(name)
+    if needed:
+        print("PyTorch components missing:", ", ".join(needed))
+        # No index override; let pip resolve appropriate wheels (CPU/GPU)
+        pip_install(needed, log_file)
+    else:
+        print("PyTorch stack present; skipping install.")
+
+def force_reinstall_rest(log_file: Path):
+    """Force-reinstall numpy and the rest of the stack (pins preserved above)."""
+    # numpy first to avoid transient ABI weirdness with downstream libs
+    numpy_args = ["--upgrade", "--force-reinstall", "numpy"]
+    pip_install(numpy_args, log_file)
+
+    others = [p for p in PINNED_PKGS if not p.startswith("numpy")]
+    if others:
+        pip_install(["--upgrade", "--force-reinstall"] + others, log_file)
+
+def write_manifest(out_dir: Path):
+    importlib.invalidate_caches()
+    def safe_ver(name):
+        try:
+            m = __import__(name)
+            return getattr(m, "__version__", None)
+        except Exception:
+            return None
+
+    # torch cuda version (best-effort, may be None)
+    torch_cuda = None
+    try:
+        import torch
+        torch_cuda = getattr(getattr(torch, "version", None), "cuda", None)
+    except Exception:
+        pass
+
+    manifest = {
+        "torch": safe_ver("torch"),
+        "torch_cuda": torch_cuda,
+        "torchaudio": safe_ver("torchaudio"),
+        "torchvision": safe_ver("torchvision"),
+        "numpy": safe_ver("numpy"),
+        "transformers": safe_ver("transformers"),
+        "accelerate": safe_ver("accelerate"),
+        "datasets": safe_ver("datasets"),
+        "scikit_learn": safe_ver("sklearn"),
+        "matplotlib": safe_ver("matplotlib"),
+        "ipywidgets": safe_ver("ipywidgets"),
+        "tqdm": safe_ver("tqdm"),
+        "bitsandbytes": safe_ver("bitsandbytes"),
+        "transformer_lens": safe_ver("transformer_lens"),
+    }
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 def main():
     out_dir = Path("outputs/install")
@@ -52,91 +112,17 @@ def main():
         except Exception:
             pass
 
-    # Detect current torch/cuda
-    torch_ver, torch_mod = get_mod_version("torch")
-    cur_cuda = getattr(getattr(torch_mod, "version", None), "cuda", None) if torch_mod else None
-    print(f"Detected Torch: {torch_ver} | CUDA: {cur_cuda}")
+    # 1) Make sure torch stack exists (any version/CUDA)
+    ensure_pt_stack(log_file)
 
-    # Figure out which PyTorch components (if any) need installing/updating
-    to_install_pt = []
-    need_torch = not (torch_ver == DESIRED["torch"] and cur_cuda == DESIRED_CUDA)
-    if need_torch:
-        to_install_pt.append(f"torch=={DESIRED['torch']}")
-    ta_ver, _ = get_mod_version("torchaudio")
-    if ta_ver != DESIRED["torchaudio"]:
-        to_install_pt.append(f"torchaudio=={DESIRED['torchaudio']}")
-    tv_ver, _ = get_mod_version("torchvision")
-    if tv_ver != DESIRED["torchvision"]:
-        to_install_pt.append(f"torchvision=={DESIRED['torchvision']}")
+    # 2) Force-reinstall numpy and the rest
+    force_reinstall_rest(log_file)
 
-    pytorch_changed = False
-    if to_install_pt:
-        print("Installing/aligning PyTorch stack:", ", ".join(to_install_pt))
-        pip_install(["--index-url", PYTORCH_INDEX_URL] + to_install_pt, log_file)
-        pytorch_changed = True
-    else:
-        print("PyTorch stack already at desired versions; skipping reinstall.")
+    # 3) Manifest
+    write_manifest(out_dir)
 
-    # Reinstall current NumPy ONLY if PyTorch stack changed (helps ABI edges after torch swaps)
-    if pytorch_changed:
-        try:
-            import numpy as _np  # noqa
-            numpy_pin = f"numpy=={_np.__version__}"
-            print(f"Reinstalling {numpy_pin} to avoid ABI mismatch...")
-            pip_install(["--force-reinstall", numpy_pin], log_file)
-        except Exception:
-            print("NumPy not detectable pre-reinstall; installing latest stable NumPy from PyPI.")
-            pip_install(["numpy"], log_file)
-
-    # Core stack (pinned to latest stable compatible with Torch 2.8)
-    pkgs = [
-        "transformers==4.55.2",
-        "accelerate==1.10.0",
-        "datasets==4.0.0",
-        "scikit-learn==1.7.1",
-        "matplotlib==3.10.5",
-        "ipywidgets==8.1.7",
-        "tqdm==4.67.1",
-        "bitsandbytes==0.46.1",
-        "transformer_lens==2.16.1",
-        "scikit-learn>=1.2",
-    ]
-    pip_install(pkgs, log_file)
-
-    # Build manifest (be tolerant if some imports fail)
-    def safe_ver(mod_name):
-        try:
-            mod = __import__(mod_name)
-            return getattr(mod, "__version__", None)
-        except Exception:
-            return None
-
-    import importlib
-    importlib.invalidate_caches()
-
-    torch_ver, torch_mod = get_mod_version("torch")
-    torch_cuda = getattr(getattr(torch_mod, "version", None), "cuda", None) if torch_mod else None
-
-    manifest = {
-        "torch": torch_ver,
-        "torch_cuda": torch_cuda,
-        "torchaudio": safe_ver("torchaudio"),
-        "torchvision": safe_ver("torchvision"),
-        "transformers": safe_ver("transformers"),
-        "accelerate": safe_ver("accelerate"),
-        "datasets": safe_ver("datasets"),
-        "scikit_learn": safe_ver("sklearn"),
-        "matplotlib": safe_ver("matplotlib"),
-        "ipywidgets": safe_ver("ipywidgets"),
-        "tqdm": safe_ver("tqdm"),
-        "bitsandbytes": safe_ver("bitsandbytes"),
-        "transformer_lens": safe_ver("transformer_lens"),
-    }
-
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print("✅ Dependencies installed. Manifest written to outputs/install/manifest.json")
+    print("✅ Done. Manifest written to outputs/install/manifest.json")
     print(f"📄 pip log: {log_file}")
-
 
 if __name__ == "__main__":
     main()

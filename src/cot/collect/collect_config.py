@@ -3,7 +3,7 @@ from __future__ import annotations
 # -----------------------------
 # Model & runtime configuration
 # -----------------------------
-MODEL_NAME = "Qwen/Qwen3-0.6B"
+MODEL_NAME = "Qwen/Qwen3-4B"
 TRUST_REMOTE_CODE = True
 
 DEVICE = "cuda"
