@@ -53,13 +53,33 @@ def _read_labels(labels_csv: Path) -> pd.DataFrame:
     if cfg.GROUP_COL not in df.columns:
         raise ValueError(f"Missing '{cfg.GROUP_COL}' in labels CSV")
 
-    # Optional filtering by offset
-    if cfg.FILTER_OFFSET_EQ is not None:
-        if cfg.OFFSET_COL not in df.columns:
+    # Optional filtering by offset (supports range, max, or equality).
+    off_col = cfg.OFFSET_COL
+    has_any_filter = (
+        cfg.FILTER_OFFSET_EQ is not None
+        or getattr(cfg, 'FILTER_OFFSET_MAX', None) is not None
+        or getattr(cfg, 'FILTER_OFFSET_RANGE', None) is not None
+    )
+    if has_any_filter:
+        if off_col not in df.columns:
             raise ValueError(
-                f"Requested FILTER_OFFSET_EQ={cfg.FILTER_OFFSET_EQ} but '{cfg.OFFSET_COL}' not present in labels."
+                f"Requested offset filtering but '{off_col}' not present in labels."
             )
-        df = df[df[cfg.OFFSET_COL] == cfg.FILTER_OFFSET_EQ].copy()
+        # RANGE (inclusive)
+        rng = getattr(cfg, 'FILTER_OFFSET_RANGE', None)
+        if isinstance(rng, (tuple, list)) and len(rng) == 2:
+            lo, hi = rng
+            if lo is not None:
+                df = df[df[off_col] >= lo]
+            if hi is not None:
+                df = df[df[off_col] <= hi]
+        # MAX (<=)
+        maxv = getattr(cfg, 'FILTER_OFFSET_MAX', None)
+        if maxv is not None:
+            df = df[df[off_col] <= maxv]
+        # EQ (==)
+        if cfg.FILTER_OFFSET_EQ is not None:
+            df = df[df[off_col] == cfg.FILTER_OFFSET_EQ]
 
     return df
 
@@ -179,6 +199,9 @@ def main():
     scores_csv = run_dir / "layer_scores.csv"
 
     df = _read_labels(labels_csv)
+    # Keep track of row indices relative to the unfiltered labels CSV, so we can
+    # subset activation matrices to match any label filtering (e.g., FILTER_OFFSET_EQ)
+    row_idx = df.index.to_numpy()
     y = df["_y"].to_numpy()
     groups = df[cfg.GROUP_COL].to_numpy()
 
@@ -236,10 +259,19 @@ def main():
     layer_iter = tqdm(layers, desc="Layers", leave=True) if _HAS_TQDM else layers
     for layer_idx, key in layer_iter:
         X = npz[key]  # shape [N_tokens, d_model]
+        # Align X to any filtering applied to the labels (by row index)
         if len(X) != len(df):
-            raise ValueError(
-                f"Length mismatch for layer {layer_idx}: X has {len(X)}, labels have {len(df)}"
-            )
+            try:
+                X = X[row_idx]
+            except Exception as e:
+                raise ValueError(
+                    f"Length mismatch for layer {layer_idx}: X has {len(X)}, labels have {len(df)}. "
+                    f"Also failed to subset activations using filtered label indices."
+                ) from e
+            if len(X) != len(df):
+                raise ValueError(
+                    f"After subsetting, length mismatch for layer {layer_idx}: X has {len(X)}, labels have {len(df)}"
+                )
         d_model = X.shape[1]
         pipe = _build_pipeline(d_model)
 
@@ -334,8 +366,19 @@ def main():
     header.append(f"PCA: keep {cfg.PCA_VARIANCE:.3f} variance (cap {cfg.PCA_MAX_COMPONENTS})")
     header.append(f"Grouped CV: {cfg.N_SPLITS} folds by '{cfg.GROUP_COL}'  |  N={len(df)} tokens, "
                   f"Examples={df[cfg.GROUP_COL].nunique()}, PosRate={df['_y'].mean():.3f}")
+    # Record any active filters in the report header
+    filters = []
+    rng = getattr(cfg, 'FILTER_OFFSET_RANGE', None)
+    if isinstance(rng, (tuple, list)) and len(rng) == 2:
+        lo, hi = rng
+        filters.append(f"{cfg.OFFSET_COL} in [{lo if lo is not None else '-inf'}, {hi if hi is not None else '+inf'}]")
+    maxv = getattr(cfg, 'FILTER_OFFSET_MAX', None)
+    if maxv is not None:
+        filters.append(f"{cfg.OFFSET_COL} <= {maxv}")
     if cfg.FILTER_OFFSET_EQ is not None:
-        header.append(f"Filter: {cfg.OFFSET_COL} == {cfg.FILTER_OFFSET_EQ}")
+        filters.append(f"{cfg.OFFSET_COL} == {cfg.FILTER_OFFSET_EQ}")
+    if filters:
+        header.append("Filter: " + "; ".join(filters))
 
     # Per-regime summary (best layer by AUROC then Acc)
     scores_df = pd.read_csv(scores_csv)
@@ -343,17 +386,26 @@ def main():
     best = scores_df.sort_values(["auroc", "acc"], ascending=False).head(3)
     per_regime_lines = []
     if cfg.REGIME_COL in df.columns:
+        # Map original label indices -> positional indices within the filtered df
+        idx_to_pos = {int(ix): pos for pos, ix in enumerate(df.index.to_numpy())}
         for _, row in best.iterrows():
             lid = int(row["layer"])
             y_hat = all_layer_preds[lid]
             y_score = all_layer_scores[lid]
             per_regime_lines.append(f"\nBest layer candidate: L{lid}  (Acc={row['acc']:.3f}, AUROC={row['auroc']:.3f})")
             for reg, sub in df.groupby(cfg.REGIME_COL):
-                idx = sub.index.to_numpy()
-                acc = accuracy_score(df.loc[idx, "_y"], y_hat[idx])
+                orig_idx = sub.index.to_numpy()
+                # Convert label indices to positional indices into y_hat/y_score
+                pos_idx = np.array([idx_to_pos[i] for i in orig_idx if int(i) in idx_to_pos], dtype=int)
+                if pos_idx.size == 0:
+                    per_regime_lines.append(f"  - {reg:<18} Acc=nan  AUROC=nan")
+                    continue
+                acc = accuracy_score(df.iloc[pos_idx]["_y"], y_hat[pos_idx])
                 try:
-                    if np.unique(df.loc[idx, "_y"]).size > 1 and np.isfinite(y_score[idx]).any():
-                        auc = roc_auc_score(df.loc[idx, "_y"], y_score[idx][np.isfinite(y_score[idx])])
+                    y_true_reg = df.iloc[pos_idx]["_y"].to_numpy()
+                    y_score_reg = y_score[pos_idx]
+                    if np.unique(y_true_reg).size > 1 and np.isfinite(y_score_reg).any():
+                        auc = roc_auc_score(y_true_reg, y_score_reg[np.isfinite(y_score_reg)])
                     else:
                         auc = float("nan")
                 except Exception:
