@@ -59,7 +59,7 @@ MIN_CLASS_COUNT = 5
 # Optional random token subsample for faster experiments
 # Set to an integer to sample that many tokens uniformly at random after filtering.
 # Leave as None to use all available tokens.
-N_TOKENS = 20000  # e.g., 100_000
+N_TOKENS = 10000  # e.g., 100_000
 
 def pca_n_components(d_model: int, variance: float = PCA_VARIANCE, cap: int = PCA_MAX_COMPONENTS) -> int:
     # We pass a float to PCA(n_components=variance) to keep explained variance; this cap is informative only.

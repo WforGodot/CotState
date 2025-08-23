@@ -20,7 +20,7 @@ EMPTY_CACHE_EVERY_N_BATCHES = 8
 # What to collect
 # -----------------------------
 HOOK_POINT = "resid_post"       # e.g., resid_pre|resid_mid|resid_post|mlp_post|attn_out|attn_pattern
-LAYERS = list(range(9, 27))
+LAYERS = list(range(0, 36, 2))
 
 # -----------------------------
 # Sampling / selection controls
