@@ -183,6 +183,6 @@ cython_debug/
 *.pt
 *.npz
 outputs/
-src/cot/outputs/collect/
+src/cot/outputs*
 .rclone-bin/
 rclone.conf

@@ -167,6 +167,9 @@ def main():
 
     # Pretokenize to CPU & compute keep ranges (so we can bucket by length cleanly)
     pretokenized: List[Dict] = []
+    rng = np.random.RandomState(getattr(cfg, 'SEED', 0))
+    sample_frac = float(getattr(cfg, 'TOKEN_SAMPLE_FRACTION', 1.0) or 1.0)
+    sample_frac = max(0.0, min(1.0, sample_frac))
     for _, row in rows.iterrows():
         try:
             p_idx = int(row["p_char_index"])
@@ -195,6 +198,23 @@ def main():
         if not (a_before < b_before or a_after < b_after):
             continue
 
+        # Build keep indices with optional random subsampling per token
+        keep_idxs: List[int] = []
+        if b_before > a_before:
+            if sample_frac >= 1.0:
+                keep_idxs.extend(range(a_before, b_before))
+            else:
+                n = b_before - a_before
+                m = rng.rand(n) < sample_frac
+                keep_idxs.extend([a_before + i for i in range(n) if m[i]])
+        if b_after > a_after:
+            if sample_frac >= 1.0:
+                keep_idxs.extend(range(a_after, b_after))
+            else:
+                n = b_after - a_after
+                m = rng.rand(n) < sample_frac
+                keep_idxs.extend([a_after + i for i in range(n) if m[i]])
+
         pretokenized.append({
             "id": ex_id,
             "regime": regime,
@@ -206,6 +226,7 @@ def main():
             "b_before": b_before,
             "a_after": a_after,
             "b_after": b_after,
+            "keep_idxs": keep_idxs,
         })
 
     if len(pretokenized) == 0:
@@ -226,10 +247,13 @@ def main():
     labels: List[Tuple[int, str, str, int, int]] = []  # (example_id, regime, p_value, offset_from_split, token_abs_index)
     debug_lines: List[str] = []
 
-    # Precompute total tokens to keep for preallocation
+    # Precompute total tokens to keep for preallocation (after sampling)
     for ex in pretokenized:
-        total_kept_tokens += int(max(0, ex["b_before"] - ex["a_before"]))
-        total_kept_tokens += int(max(0, ex["b_after"] - ex["a_after"]))
+        total_kept_tokens += int(len(ex.get("keep_idxs", [])))
+
+    if total_kept_tokens == 0:
+        print("No tokens selected after sampling; exiting without saving.")
+        return
 
     batch_idx_global = 0
     for key in sorted(buckets.keys()):
@@ -242,8 +266,7 @@ def main():
 
             token_tensors = [ex["tokens"] for ex in chunk]  # each [1, L_i]
             split_tok = [ex["split"] for ex in chunk]
-            before_ranges = [(ex["a_before"], ex["b_before"]) for ex in chunk]
-            after_ranges = [(ex["a_after"], ex["b_after"]) for ex in chunk]
+            keep_lists = [ex.get("keep_idxs", []) for ex in chunk]
             seq_lens = [ex["seq_len"] for ex in chunk]
             regimes = [ex["regime"] for ex in chunk]
             pvals = [ex["p_value"] for ex in chunk]
@@ -270,13 +293,12 @@ def main():
                     )
                     write_idx[lyr] = 0
 
-                # Build list of selected segments in the same order as label creation
+                # Build list of selected tokens per example (after sampling)
                 segs: List[torch.Tensor] = []
-                for i, ((ab, bb), (aa, ba)) in enumerate(zip(before_ranges, after_ranges)):
-                    if bb > ab:
-                        segs.append(acts[i, ab:bb, :])
-                    if ba > aa:
-                        segs.append(acts[i, aa:ba, :])
+                for i, keep in enumerate(keep_lists):
+                    if keep:
+                        idx = torch.tensor(keep, device=acts.device, dtype=torch.long)
+                        segs.append(acts[i, idx, :])
 
                 if segs:
                     batch_sel = torch.cat(segs, dim=0).to(dtype=torch.float16)
@@ -291,44 +313,36 @@ def main():
                 del acts  # shorten GPU lifetime
 
             # Labels + safe debug decode (no padded tail)
-            for i, (ex_id, regime, p_val, (ab, bb), (aa, ba), L, sp) in enumerate(
-                zip(ex_ids, regimes, pvals, before_ranges, after_ranges, seq_lens, split_tok)
+            for i, (ex_id, regime, p_val, keep, L, sp) in enumerate(
+                zip(ex_ids, regimes, pvals, keep_lists, seq_lens, split_tok)
             ):
-                # before tokens
-                for tok_idx in range(ab, bb):
-                    offset = int(tok_idx - sp)
-                    labels.append((ex_id, regime, p_val, offset, tok_idx))
-                # after tokens
-                for tok_idx in range(aa, ba):
+                # labels for sampled tokens
+                for tok_idx in keep:
                     offset = int(tok_idx - sp)
                     labels.append((ex_id, regime, p_val, offset, tok_idx))
 
                 if len(debug_lines) < cfg.MAX_DEBUG:
                     row = batch_tokens[i]
-                    a = ab
-                    b = bb
-                    a2 = aa
-                    b2 = ba
-                    # Build a view that brackets the kept before and after segments.
                     parts = []
-                    # prefix before kept-before
-                    parts.append(decode_slice(model, row, 0, a))
-                    # kept-before
-                    if b > a:
-                        parts.append("[[" + decode_slice(model, row, a, b) + "]]")
-                    # between before and after (usually empty, as b == a2 == split)
-                    if a2 > b:
-                        parts.append(decode_slice(model, row, b, a2))
-                    # kept-after
-                    if b2 > a2:
-                        parts.append("[[" + decode_slice(model, row, a2, b2) + "]]")
-                    # tail
-                    parts.append(decode_slice(model, row, b2, L))
+                    keep_set = set(keep)
+                    pos = 0
+                    while pos < L:
+                        start = pos
+                        # non-selected run
+                        while pos < L and pos not in keep_set:
+                            pos += 1
+                        if pos > start:
+                            parts.append(decode_slice(model, row, start, pos))
+                        start = pos
+                        # selected run
+                        while pos < L and pos in keep_set:
+                            pos += 1
+                        if pos > start:
+                            parts.append("[[" + decode_slice(model, row, start, pos) + "]]")
                     dbg = "".join(parts)
                     if len(dbg) > 1200:
                         dbg = dbg[:600] + " ... " + dbg[-600:]
-                    kept_total = max(0, bb-ab) + max(0, ba-aa)
-                    header = f"(id={ex_id}, regime={regime}, p={p_val}, split_tok={split_tok[i]}, kept={kept_total})"
+                    header = f"(id={ex_id}, regime={regime}, p={p_val}, split_tok={sp}, kept={len(keep)})"
                     debug_lines.append(header + "\n" + dbg + "\n")
 
             # ---- end-of-batch cleanup to avoid VRAM growth ----
@@ -401,6 +415,7 @@ def main():
         "batch_size": args.batch_size,
         "bucket_size": args.bucket_size,
         "total_selected_tokens": int(labels_df.shape[0]),
+        "token_sample_fraction": float(getattr(cfg, 'TOKEN_SAMPLE_FRACTION', 1.0) or 1.0),
         "unique_examples": int(labels_df["example_id"].nunique()),
         "counts_by_regime": {r: int((rows["regime"] == r).sum()) for r in REGIMES},
         "tokens_around_by_regime": {r: [int(x) for x in tok_around_by_regime[r]] for r in REGIMES},

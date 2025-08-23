@@ -523,42 +523,28 @@ def main():
         all_layer_preds[layer_idx] = oof_pred
         all_layer_scores[layer_idx] = oof_score
 
-        # Order for lowrank + save geometry
+        # Order for lowrank components across folds
         order_idx: Optional[np.ndarray] = None
         if comp_auc_sums is not None and comp_counts is not None and np.any(comp_counts > 0):
             mean_aurocs = comp_auc_sums / np.maximum(comp_counts, 1)
             order_idx = np.argsort(-np.nan_to_num(mean_aurocs, nan=-1.0))
-        # Save learned vectors (rank1/lowrank) on two disjoint splits for stability diagnostics
+        # Save learned vectors (rank1/lowrank) trained on all data as the final direction(s)
         try:
             if str(cfg.CLASSIFIER).lower() in {"rank1", "lowrank"}:
-                # Build two splits by groups (keep examples intact)
-                uniq_groups = np.unique(groups)
-                rng = np.random.RandomState(getattr(cfg, 'RANDOM_STATE', 0))
-                perm = rng.permutation(len(uniq_groups))
-                g1 = set(uniq_groups[perm[: len(uniq_groups)//2]])
-                g2 = set(uniq_groups[perm[len(uniq_groups)//2:]])
-                m1 = np.array([g in g1 for g in groups])
-                m2 = np.array([g in g2 for g in groups])
-
-                for split_id, mask in [(1, m1), (2, m2)]:
-                    if not np.any(mask):
-                        continue
-                    X_split, y_split = X[mask], y[mask]
-                    pipe_s = _build_pipeline(d_model)
-                    pipe_s.fit(X_split, y_split)
-                    steps = pipe_s.named_steps
-                    if 'subspace' not in steps:
-                        continue
-                    scaler: StandardScaler = steps['scale']  # type: ignore
-                    sub: SupervisedSubspace = steps['subspace']  # type: ignore
+                pipe_full = _build_pipeline(d_model)
+                pipe_full.fit(X, y)
+                steps_full = pipe_full.named_steps
+                if 'subspace' in steps_full:
+                    scaler: StandardScaler = steps_full['scale']  # type: ignore
+                    sub: SupervisedSubspace = steps_full['subspace']  # type: ignore
                     U = sub.recover_geometry(scaler)  # (d, k)
                     # Order components by cross-fold AUROC if available
                     if order_idx is not None and U.shape[1] == order_idx.shape[0]:
                         U = U[:, order_idx]
-                    # Save each vector separately and also the stack
+                    # Save each vector separately and also the stack (no split suffix)
                     for j in range(U.shape[1]):
-                        np.save(vectors_run_dir / f"L{layer_idx}_split{split_id}_top{j+1}.npy", U[:, j])
-                    np.save(vectors_run_dir / f"L{layer_idx}_split{split_id}_top{U.shape[1]}.stack.npy", U)
+                        np.save(vectors_run_dir / f"L{layer_idx}_top{j+1}.npy", U[:, j])
+                    np.save(vectors_run_dir / f"L{layer_idx}_top{U.shape[1]}.stack.npy", U)
         except Exception as e:
             print(f"[WARN] Failed to save vectors for L{layer_idx}: {e}")
 

@@ -44,7 +44,7 @@ FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
 FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
 # Either an inclusive range tuple (lo, hi) with None for open bounds,
 # or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
-FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (-10, 0)
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (0, 10)
 
 # Optional random subsample of tokens after filtering; None to use all
 N_TOKENS: int | None = 20000

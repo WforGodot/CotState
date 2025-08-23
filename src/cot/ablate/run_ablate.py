@@ -19,7 +19,16 @@ from collect.model_utils import (
     load_tlens_model,
     tokenize_with_split,
     ensure_dir,
+    get_pad_id,
+    pad_and_stack,
 )
+
+# Progress bars
+try:
+    from tqdm.auto import tqdm  # type: ignore
+except Exception:  # pragma: no cover
+    def tqdm(x, *args, **kwargs):
+        return x
 
 
 REGIMES = ["i_initial", "ii_inconsequential", "iii_derived", "iv_indeterminate", "v_output"]
@@ -52,11 +61,24 @@ def _load_vector(vec_path: Path, d_model: int, device: torch.device, dtype: torc
     return vt / n
 
 
-def _get_token_id(model, s: str) -> Tuple[int, bool]:
-    toks = model.to_tokens(s, prepend_bos=False)
-    tid = int(toks[0, 0].item())
-    multi = toks.shape[1] > 1
-    return tid, multi
+def _get_token_ids(model, strings: List[str]) -> Tuple[List[int], bool, Dict[str, int]]:
+    ids: List[int] = []
+    any_multi = False
+    mapping: Dict[str, int] = {}
+    for s in strings:
+        toks = model.to_tokens(s, prepend_bos=False)
+        tid = int(toks[0, 0].item())
+        any_multi = any_multi or (toks.shape[1] > 1)
+        mapping[s] = tid
+        ids.append(tid)
+    # Deduplicate preserving order
+    seen = set()
+    dedup: List[int] = []
+    for t in ids:
+        if t not in seen:
+            dedup.append(t)
+            seen.add(t)
+    return dedup, any_multi, mapping
 
 
 def _select_rows(df: pd.DataFrame) -> pd.DataFrame:
@@ -129,9 +151,17 @@ def main():
     except Exception:
         pass
 
-    # Probe tokens for True / False
-    true_id, true_multi = _get_token_id(model, cfg.TRUE_STR)
-    false_id, false_multi = _get_token_id(model, cfg.FALSE_STR)
+    # Probe tokens for True / False (multiple variants supported)
+    true_strings = getattr(cfg, 'TRUE_STRINGS', None) or [getattr(cfg, 'TRUE_STR', ' True')]
+    false_strings = getattr(cfg, 'FALSE_STRINGS', None) or [getattr(cfg, 'FALSE_STR', ' False')]
+    true_ids, true_multi, true_map = _get_token_ids(model, true_strings)
+    false_ids, false_multi, false_map = _get_token_ids(model, false_strings)
+
+    if true_multi or false_multi:
+        raise ValueError(
+            "The strings ' true'/' false' are multi-token for this tokenizer. "
+            "Pick single-token forms that match your CoT text, or implement multi-token scoring."
+        )
 
     # Direction vector
     d_model = int(model.cfg.d_model)
@@ -158,68 +188,186 @@ def main():
     report_path = run_dir / "report.txt"
     per_ex_csv = run_dir / "per_example.csv"
 
-    # Storage for metrics
-    rows_out: List[Dict] = []
-
+    # Pretokenize prefixes and compute start/end windows
     prior = int(cfg.PRIOR_TOKENS)
-
-    for _, r in rows.iterrows():
+    pretokenized: List[Dict] = []
+    for _, r in tqdm(rows.iterrows(), total=len(rows), desc="Pretokenize/split", leave=False):
         try:
             p_idx = int(r["p_char_index"])  # char index into CoT
         except Exception:
             continue
         question = str(r["question"]) ; cot = str(r["cot"]) ; regime = str(r["regime"]) ; label = str(r["p_value"]) ; ex_id = int(r["id"]) if pd.notna(r["id"]) else -1
-
         try:
-            tok_full, split_idx, pre_dec, _, _ = tokenize_with_split(model, question, cot, p_idx)
+            tok_full, split_idx, _, _, _ = tokenize_with_split(model, question, cot, p_idx)
         except Exception:
             continue
-
-        # Use only the prefix up to split
-        tokens = tok_full[:, :split_idx]
+        tokens = tok_full[:, :split_idx]  # prefix only
         L = int(tokens.shape[1])
         if L == 0:
             continue
         start = max(0, L - prior)
-        end = L
-
-        with torch.no_grad():
-            base_logits = model(tokens)
-            base_logit_true = float(base_logits[0, L - 1, true_id].item())
-            base_logit_false = float(base_logits[0, L - 1, false_id].item())
-
-            # Ablated forward with hook
-            hook_fn = _hook_inverter(v=v, start_idx=start, end_idx=end)
-            abl_logits = model.run_with_hooks(tokens, fwd_hooks=[(hook_name, hook_fn)])
-            abl_logit_true = float(abl_logits[0, L - 1, true_id].item())
-            abl_logit_false = float(abl_logits[0, L - 1, false_id].item())
-
-        base_margin = base_logit_true - base_logit_false
-        abl_margin = abl_logit_true - abl_logit_false
-        delta_margin = abl_margin - base_margin
-
-        correct_is_true = (label == "True")
-        # Change in the logit of the gold option
-        gold_delta = (abl_logit_true - base_logit_true) if correct_is_true else (abl_logit_false - base_logit_false)
-        flipped = int(np.sign(base_margin) != np.sign(abl_margin)) if base_margin != 0 else int(np.sign(abl_margin) != 0)
-
-        rows_out.append(dict(
+        pretokenized.append(dict(
             id=ex_id,
             regime=regime,
             label=label,
+            tokens=tokens.cpu(),
             L=L,
-            start_idx=start,
-            end_idx=end,
-            base_true=base_logit_true,
-            base_false=base_logit_false,
-            abl_true=abl_logit_true,
-            abl_false=abl_logit_false,
-            base_margin=base_margin,
-            abl_margin=abl_margin,
-            delta_margin=delta_margin,
-            gold_delta=gold_delta,
-            flipped=flipped,
+            start=start,
+            end=L,
         ))
+
+    if len(pretokenized) == 0:
+        print("No usable examples after tokenization/split. Exiting.")
+        return
+
+    # Bucket by length
+    bucket_size = max(1, int(getattr(cfg, 'LENGTH_BUCKET_SIZE', 64)))
+    buckets: Dict[int, List[Dict]] = {}
+    for ex in pretokenized:
+        key = int((ex["L"] - 1) // bucket_size)
+        buckets.setdefault(key, []).append(ex)
+
+    pad_id = get_pad_id(model)
+    rows_out: List[Dict] = []
+    bs = max(1, int(getattr(cfg, 'BATCH_SIZE', 32)))
+    empty_every = int(getattr(cfg, 'EMPTY_CACHE_EVERY_N_BATCHES', 0) or 0)
+    global_batch_idx = 0
+
+    for key in tqdm(sorted(buckets.keys()), desc="Buckets", leave=True):
+        group = buckets[key]
+        for i in tqdm(range(0, len(group), bs), total=(len(group) + bs - 1)//bs,
+                      desc=f"bucket~len<{(key+1)*bucket_size}>", leave=False):
+            chunk = group[i:i+bs]
+            lens = torch.tensor([ex["L"] for ex in chunk], dtype=torch.long)
+            starts = torch.tensor([ex["start"] for ex in chunk], dtype=torch.long)
+            # Stack tokens to [B, max_L]
+            tok_list = [ex["tokens"] for ex in chunk]
+            tokens = pad_and_stack(tok_list, pad_id=pad_id).to(model.cfg.device)
+            B = tokens.shape[0]
+            max_L = tokens.shape[1]
+
+            # Duplicate batch: first half baseline (no change), second half ablated
+            tokens2 = torch.cat([tokens, tokens], dim=0)
+
+            # Build mask [2B, max_L, 1] where True marks positions to reflect
+            pos = torch.arange(max_L, device=tokens2.device).unsqueeze(0).expand(B, -1)
+            valid = pos < lens.unsqueeze(1).to(tokens2.device)
+            mask_half = (pos >= starts.unsqueeze(1).to(tokens2.device)) & valid
+            mask = torch.cat([torch.zeros_like(mask_half), mask_half], dim=0).unsqueeze(-1)
+
+            # Hook: reflect along v on masked positions only, and capture pre-ablation projections
+            v_vec = v  # [d]
+            # Containers to capture per-example pre-ablation metrics at the hook layer
+            capture = {"mean_proj": None, "mean_abs_proj": None, "mean_norm": None, "mean_abs_cos": None}
+            def hook_fn(resid, hook):
+                # resid: [2B, max_L, d]
+                # Capture metrics on the half that will be ablated (second half) BEFORE modification
+                resid_abl = resid[B:2*B, :, :]
+                proj_abl = resid_abl @ v_vec  # [B, max_L]
+                norms_abl = resid_abl.norm(dim=-1)  # [B, max_L]
+                m = mask_half  # [B, max_L]
+                m_f = m.float()
+                counts = m_f.sum(dim=1).clamp_min(1.0)  # [B]
+                mean_proj = (proj_abl * m_f).sum(dim=1) / counts
+                mean_abs_proj = (proj_abl.abs() * m_f).sum(dim=1) / counts
+                mean_norm = (norms_abl * m_f).sum(dim=1) / counts
+                mean_abs_cos = ((proj_abl.abs() / norms_abl.clamp_min(1e-12)) * m_f).sum(dim=1) / counts
+                capture["mean_proj"] = mean_proj.detach().to("cpu")
+                capture["mean_abs_proj"] = mean_abs_proj.detach().to("cpu")
+                capture["mean_norm"] = mean_norm.detach().to("cpu")
+                capture["mean_abs_cos"] = mean_abs_cos.detach().to("cpu")
+
+                # Apply reflection on both halves according to mask
+                proj = resid @ v_vec  # [2B, max_L]
+                refl = resid - 2.0 * proj.unsqueeze(-1) * v_vec
+                return torch.where(mask, refl, resid)
+
+            with torch.no_grad():
+                logits2 = model.run_with_hooks(tokens2, fwd_hooks=[(hook_name, hook_fn)])
+
+            # Gather per-example logits at last real position
+            idx = (lens - 1).to(logits2.device)
+            ar = torch.arange(B, device=logits2.device)
+            base_logits_last = logits2[ar, idx, :]
+            abl_logits_last = logits2[ar + B, idx, :]
+
+            # Logits gathered as logsumexp over variant ids for margins
+            base_true_lse = torch.logsumexp(base_logits_last[:, true_ids], dim=1)
+            base_false_lse = torch.logsumexp(base_logits_last[:, false_ids], dim=1)
+            abl_true_lse = torch.logsumexp(abl_logits_last[:, true_ids], dim=1)
+            abl_false_lse = torch.logsumexp(abl_logits_last[:, false_ids], dim=1)
+            base_true = base_true_lse
+            base_false = base_false_lse
+            abl_true = abl_true_lse
+            abl_false = abl_false_lse
+
+            # Full-vocab probabilities
+            base_probs_last = torch.softmax(base_logits_last, dim=-1)
+            abl_probs_last = torch.softmax(abl_logits_last, dim=-1)
+            base_p_true_t = base_probs_last[:, true_ids].sum(dim=1)
+            base_p_false_t = base_probs_last[:, false_ids].sum(dim=1)
+            abl_p_true_t = abl_probs_last[:, true_ids].sum(dim=1)
+            abl_p_false_t = abl_probs_last[:, false_ids].sum(dim=1)
+
+            base_margin_t = (base_true - base_false)
+            abl_margin_t = (abl_true - abl_false)
+            base_margin = base_margin_t.cpu().numpy()
+            abl_margin = abl_margin_t.cpu().numpy()
+            delta_margin = (abl_margin - base_margin)
+
+            base_p_true = base_p_true_t.cpu().numpy()
+            base_p_false = base_p_false_t.cpu().numpy()
+            abl_p_true = abl_p_true_t.cpu().numpy()
+            abl_p_false = abl_p_false_t.cpu().numpy()
+
+            gold_is_true = np.array([ex["label"] == "True" for ex in chunk], dtype=bool)
+            gold_delta = np.where(
+                gold_is_true,
+                (abl_true - base_true).cpu().numpy(),
+                (abl_false - base_false).cpu().numpy(),
+            )
+            flipped = (np.sign(base_margin) != np.sign(abl_margin)).astype(int)
+
+            # Pull captured nudging metrics
+            mean_proj = capture["mean_proj"].numpy() if capture["mean_proj"] is not None else np.zeros(B)
+            mean_abs_proj = capture["mean_abs_proj"].numpy() if capture["mean_abs_proj"] is not None else np.zeros(B)
+            mean_norm = capture["mean_norm"].numpy() if capture["mean_norm"] is not None else np.zeros(B)
+            mean_abs_cos = capture["mean_abs_cos"].numpy() if capture["mean_abs_cos"] is not None else np.zeros(B)
+
+            for j, ex in enumerate(chunk):
+                rows_out.append(dict(
+                    id=ex["id"],
+                    regime=ex["regime"],
+                    label=ex["label"],
+                    L=int(ex["L"]),
+                    start_idx=int(ex["start"]),
+                    end_idx=int(ex["end"]),
+                    base_true=float(base_true[j].item()),
+                    base_false=float(base_false[j].item()),
+                    abl_true=float(abl_true[j].item()),
+                    abl_false=float(abl_false[j].item()),
+                    base_margin=float(base_margin[j]),
+                    abl_margin=float(abl_margin[j]),
+                    delta_margin=float(delta_margin[j]),
+                    gold_delta=float(gold_delta[j]),
+                    base_p_true=float(base_p_true[j]),
+                    base_p_false=float(base_p_false[j]),
+                    abl_p_true=float(abl_p_true[j]),
+                    abl_p_false=float(abl_p_false[j]),
+                    # "Nudge" metrics at the modified layer (pre-ablation)
+                    mean_hdotv=float(mean_proj[j]),
+                    mean_abs_hdotv=float(mean_abs_proj[j]),
+                    mean_h_norm=float(mean_norm[j]),
+                    mean_abs_cos=float(mean_abs_cos[j]),  # |cos(theta)| = |h·v| / ||h||
+                    implied_delta_along_v=float(2.0 * mean_proj[j]),        # signed change in v-coordinate
+                    implied_delta_along_v_mag=float(2.0 * mean_abs_proj[j]), # magnitude of change in v-coordinate
+                    implied_frac_change_along_v=float(2.0 * mean_abs_cos[j]),# unitless fraction in [0, 2]
+                    flipped=int(flipped[j]),
+                ))
+
+            global_batch_idx += 1
+            if (model.cfg.device.startswith("cuda") and empty_every > 0 and (global_batch_idx % empty_every == 0)):
+                torch.cuda.empty_cache()
 
     if not rows_out:
         print("No results to report.")
@@ -232,10 +380,21 @@ def main():
     def _summ(d: pd.DataFrame) -> Dict[str, float]:
         return dict(
             n=int(len(d)),
+            avg_base_margin=float(d["base_margin"].mean()),
+            med_base_margin=float(d["base_margin"].median()),
             avg_delta_margin=float(d["delta_margin"].mean()),
             med_delta_margin=float(d["delta_margin"].median()),
             frac_flipped=float(d["flipped"].mean()),
             avg_gold_delta=float(d["gold_delta"].mean()),
+            avg_base_p_true=float(d["base_p_true"].mean()) if len(d) and "base_p_true" in d else float('nan'),
+            avg_base_p_false=float(d["base_p_false"].mean()) if len(d) and "base_p_false" in d else float('nan'),
+            avg_abl_p_true=float(d["abl_p_true"].mean()) if len(d) and "abl_p_true" in d else float('nan'),
+            avg_abl_p_false=float(d["abl_p_false"].mean()) if len(d) and "abl_p_false" in d else float('nan'),
+            # Nudge summaries
+            avg_mean_abs_hdotv=float(d["mean_abs_hdotv"].mean()) if "mean_abs_hdotv" in d else float('nan'),
+            avg_mean_h_norm=float(d["mean_h_norm"].mean()) if "mean_h_norm" in d else float('nan'),
+            avg_mean_abs_cos=float(d["mean_abs_cos"].mean()) if "mean_abs_cos" in d else float('nan'),
+            avg_implied_frac_change=float(d["implied_frac_change_along_v"].mean()) if "implied_frac_change_along_v" in d else float('nan'),
         )
 
     all_sum = _summ(df_out)
@@ -252,8 +411,12 @@ def main():
     lines.append(f"Regimes: {', '.join(cfg.REGIMES_TO_USE)} | Prior tokens: {cfg.PRIOR_TOKENS}")
     lines.append(f"Samples: {len(df_out)} (requested={cfg.N_SAMPLES})")
     lines.append("")
-    lines.append(f"Tokenization note: '{cfg.TRUE_STR}' -> id {true_id}{' (multi-token)' if true_multi else ''}; "
-                 f"'{cfg.FALSE_STR}' -> id {false_id}{' (multi-token)' if false_multi else ''}")
+    # Tokenization notes (IDs for each provided variant)
+    true_kv = ", ".join([f"{k}→{v}" for k, v in true_map.items()])
+    false_kv = ", ".join([f"{k}→{v}" for k, v in false_map.items()])
+    lines.append(f"True variants (first-token ids): [{true_kv}]" + (" (some multi-token)" if true_multi else ""))
+    lines.append(f"False variants (first-token ids): [{false_kv}]" + (" (some multi-token)" if false_multi else ""))
+    lines.append("Probabilities use full softmax over vocab; for multiple variants, masses are summed per class.")
     lines.append("")
 
     def _fmt_summ(title: str, s: Dict[str, float] | None) -> List[str]:
@@ -261,10 +424,11 @@ def main():
             return [f"{title}: n=0"]
         return [
             f"{title}: n={s['n']}",
-            f"  avg Δmargin (T-F): {s['avg_delta_margin']:.4f}",
-            f"  med Δmargin (T-F): {s['med_delta_margin']:.4f}",
-            f"  frac flipped sign : {s['frac_flipped']:.3f}",
-            f"  avg Δgold logit  : {s['avg_gold_delta']:.4f}",
+            f"  base p(T/F): {s['avg_base_p_true']:.4f} / {s['avg_base_p_false']:.4f}",
+            f"  ablated p(T/F): {s['avg_abl_p_true']:.4f} / {s['avg_abl_p_false']:.4f}",
+            f"  base margin (T-F): {s['avg_base_margin']:.4f}",
+            f"  Δmargin (T-F): {s['avg_delta_margin']:.4f} | flipped: {s['frac_flipped']:.3f}",
+            f"  nudge |cos|: {s['avg_mean_abs_cos']:.4f} | frac change 2|cos|: {s['avg_implied_frac_change']:.4f}",
         ]
 
     lines.extend(_fmt_summ("Overall", all_sum))

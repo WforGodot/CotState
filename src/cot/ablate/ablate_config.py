@@ -15,13 +15,21 @@ OUT_DIR_REL = Path("cot/outputs/ablate")
 
 # Path to a learned direction (1D .npy). Relative paths are resolved
 # relative to this file; you can also use an absolute path.
-VECTOR_PATH = Path("../outputs/vectors/L12__off_-10_to_0__regs_v_output__Qwen-Qwen3-0.6B__2/L12_split1_top1.npy")
+VECTOR_PATH = Path("../outputs/vectors/L12__off_-20_to_0__regs_v_output__Qwen-Qwen3-0.6B/L12_top1.npy")
+
+
 
 # ========== Model ==========
 MODEL_NAME = "Qwen/Qwen3-0.6B"
 DEVICE = "cuda"
 DTYPE = "float16"  # one of {"float32","float16","bfloat16"}
 TRUST_REMOTE_CODE = True
+
+# ========== Batching / performance ==========
+# Process examples in padded batches grouped by similar lengths
+BATCH_SIZE = 16
+LENGTH_BUCKET_SIZE = 64
+EMPTY_CACHE_EVERY_N_BATCHES = 0  # set >0 to periodically free CUDA cache
 
 # ========== Hook / layer ==========
 # Hook point name without the "hook_" prefix (e.g., "resid_post", "mlp_out").
@@ -34,17 +42,18 @@ LAYER = 12
 REGIMES_TO_USE = ["v_output"]
 
 # Number of prior tokens (before the split) to invert along the direction.
-PRIOR_TOKENS = 10
+PRIOR_TOKENS = 20
 
 # Number of examples to sample; None for all available after filtering.
-N_SAMPLES: int | None = 500
+N_SAMPLES: int | None = 300
 
 # Strings used to pick target token ids for measuring logit shifts.
-# If the tokenizer produces multiple tokens, we will use the first token id
-# and note this in the report.
-TRUE_STR = " True"
-FALSE_STR = " False"
+# Provide multiple variants; we use the first token id of each string.
+# Duplicates are deduplicated. Backward-compat: TRUE_STR/FALSE_STR also supported.
+TRUE_STRINGS = [" True", " true", "True", "true", "1", "True"]
+FALSE_STRINGS = [" False", " false", "False", "false", "0"]
+# TRUE_STR = "1"
+# FALSE_STR = "0"
 
 # Random seed for sampling
 RANDOM_STATE = 0
-
