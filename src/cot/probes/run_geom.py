@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 import re
 from typing import Dict, List, Tuple, Optional
+import json
 
 try:
     from tqdm.auto import tqdm  # type: ignore
@@ -281,10 +282,6 @@ def main():
     labels_csv = (Path(__file__).parent / labels_csv).resolve()
 
     out_dir = (Path(__file__).parent / cfg.OUT_DIR).resolve()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = out_dir / f"{cfg.RUN_TAG}__{timestamp}"
-    report_txt = run_dir / "report.txt"
-    scores_csv = run_dir / "layer_scores.csv"
 
     df = _read_labels(labels_csv)
     target_n = None
@@ -322,6 +319,57 @@ def main():
             print(f"[WARN] Requested layers not found: {missing}")
         layers = [t for t in layers if t[0] in keep]
         print(f"[INFO] Restricting to {len(layers)} requested layers: {[t[0] for t in layers]}")
+
+    # --- Build descriptive run name and directories ---
+    def _sanitize(s: str) -> str:
+        return re.sub(r"[^A-Za-z0-9._+-]", "-", s)
+
+    # Layers portion
+    layers_used = [t[0] for t in layers]
+    layers_str = "L" + ("-".join(str(x) for x in layers_used) if layers_used else "none")
+
+    # Offset range portion (prefer FILTER_OFFSET_RANGE if present)
+    rng = getattr(cfg, 'FILTER_OFFSET_RANGE', None)
+    if isinstance(rng, (tuple, list)) and len(rng) == 2:
+        lo, hi = rng
+        off_str = f"off_{lo if lo is not None else 'min'}_to_{hi if hi is not None else 'max'}"
+    else:
+        off_str = "off_all"
+
+    # Regimes portion
+    regs = getattr(cfg, 'REGIMES_TO_USE', None)
+    regs_str = "regs_all" if regs is None else ("regs_" + "+".join(_sanitize(str(r)) for r in regs))
+
+    # Model portion: try to infer from sibling info JSON
+    model_str = "unknownmodel"
+    info_json_cand = Path(str(npz_path).replace(".npz", "_info.json"))
+    if info_json_cand.exists():
+        try:
+            with info_json_cand.open("r", encoding="utf-8") as f:
+                info = json.load(f)
+            mn = info.get("model_name") or info.get("model")
+            if mn:
+                model_str = _sanitize(str(mn))
+        except Exception:
+            pass
+
+    base_name = f"{layers_str}__{off_str}__{regs_str}__{model_str}"
+    run_name = base_name
+    # Disambiguate if exists
+    k_suffix = 1
+    while (out_dir / run_name).exists():
+        k_suffix += 1
+        run_name = f"{base_name}__{k_suffix}"
+
+    run_dir = out_dir / run_name
+    report_txt = run_dir / "report.txt"
+    scores_csv = run_dir / "layer_scores.csv"
+    print(f"[INFO] Run dir: {run_dir}")
+
+    # Prepare vectors output directory
+    vectors_base = (Path(__file__).parent / getattr(cfg, 'VECTORS_DIR', Path("../outputs/vectors"))).resolve()
+    vectors_run_dir = vectors_base / run_name
+    vectors_run_dir.mkdir(parents=True, exist_ok=True)
 
     # Table header
     hdr = cfg.COL_WIDTHS
@@ -480,11 +528,39 @@ def main():
         if comp_auc_sums is not None and comp_counts is not None and np.any(comp_counts > 0):
             mean_aurocs = comp_auc_sums / np.maximum(comp_counts, 1)
             order_idx = np.argsort(-np.nan_to_num(mean_aurocs, nan=-1.0))
-        if cli.save_geometry:
-            try:
-                _maybe_save_geometry(run_dir, layer_idx, pipe, order_idx)
-            except Exception as e:
-                print(f"[WARN] Failed to save geometry for L{layer_idx}: {e}")
+        # Save learned vectors (rank1/lowrank) on two disjoint splits for stability diagnostics
+        try:
+            if str(cfg.CLASSIFIER).lower() in {"rank1", "lowrank"}:
+                # Build two splits by groups (keep examples intact)
+                uniq_groups = np.unique(groups)
+                rng = np.random.RandomState(getattr(cfg, 'RANDOM_STATE', 0))
+                perm = rng.permutation(len(uniq_groups))
+                g1 = set(uniq_groups[perm[: len(uniq_groups)//2]])
+                g2 = set(uniq_groups[perm[len(uniq_groups)//2:]])
+                m1 = np.array([g in g1 for g in groups])
+                m2 = np.array([g in g2 for g in groups])
+
+                for split_id, mask in [(1, m1), (2, m2)]:
+                    if not np.any(mask):
+                        continue
+                    X_split, y_split = X[mask], y[mask]
+                    pipe_s = _build_pipeline(d_model)
+                    pipe_s.fit(X_split, y_split)
+                    steps = pipe_s.named_steps
+                    if 'subspace' not in steps:
+                        continue
+                    scaler: StandardScaler = steps['scale']  # type: ignore
+                    sub: SupervisedSubspace = steps['subspace']  # type: ignore
+                    U = sub.recover_geometry(scaler)  # (d, k)
+                    # Order components by cross-fold AUROC if available
+                    if order_idx is not None and U.shape[1] == order_idx.shape[0]:
+                        U = U[:, order_idx]
+                    # Save each vector separately and also the stack
+                    for j in range(U.shape[1]):
+                        np.save(vectors_run_dir / f"L{layer_idx}_split{split_id}_top{j+1}.npy", U[:, j])
+                    np.save(vectors_run_dir / f"L{layer_idx}_split{split_id}_top{U.shape[1]}.stack.npy", U)
+        except Exception as e:
+            print(f"[WARN] Failed to save vectors for L{layer_idx}: {e}")
 
         if COMPARE_MODE != 'none' and (len(cos_dom_list) or len(cos_wdom_list)):
             parts = [f"L{layer_idx:02d} compare:"]
@@ -509,7 +585,7 @@ def main():
     print(f"[INFO] Wrote per-layer scores CSV → {scores_csv}")
 
     header: List[str] = []
-    header.append(f"Probe run: {cfg.RUN_TAG}")
+    header.append(f"Probe run: {run_name}")
     header.append(f"Timestamp: {datetime.now().strftime('%Y%m%d_%H%M%S')}")
     header.append(f"NPZ: {npz_path}")
     header.append(f"Labels: {labels_csv}")

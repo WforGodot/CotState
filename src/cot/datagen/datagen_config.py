@@ -6,11 +6,11 @@ PREFERRED_VARS = list("PQRSTUVWXYZABCDEFGHIJKLMNO")
 
 # How many items per regime
 QUESTIONS_PER_REGIME = {
-    "i_initial": 1000,
+    "i_initial": 2000,
     "ii_inconsequential": 0,
-    "iii_derived": 1000,
-    "iv_indeterminate": 0,
-    "v_output": 1000,
+    "iii_derived": 2000,
+    "iv_indeterminate": 2000,
+    "v_output": 2000,
 }
 
 # Counts per bucket (inclusive ranges)

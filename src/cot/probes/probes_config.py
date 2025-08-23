@@ -19,6 +19,10 @@ LAYERS_TO_TRAIN = [12]  # type: list[int] | None
 RUN_TAG = "resid_post_qwen3_linear_probes"
 OUT_DIR = Path("../outputs/probes")  # results will be written under this directory
 
+# Where to save learned direction/subspace vectors from run_geom.
+# A subfolder with a descriptive run name will be created here.
+VECTORS_DIR = Path("../outputs/vectors")
+
 # --- Target + groups ---
 TARGET_COL = "p_value"          # "True"/"False"
 POSITIVE_TOKEN = "true"         # case-insensitive match in labels CSV
@@ -28,7 +32,7 @@ OFFSET_COL = "offset_from_split"  # optional slice reporting
 
 # Optional: restrict which regimes' tokens to use. Set to a list of regime
 # names (e.g., ["i_initial", "iii_derived"]) or leave as None to use all.
-REGIMES_TO_USE = ["v_output"]  # type: list[str] | None
+REGIMES_TO_USE = ["i_initial", "iii_derived", "v_output"]  # type: list[str] | None
 
 # --- Model & evaluation ---
 CLASSIFIER = "ridge"  # "ridge" or "logreg"
@@ -42,7 +46,7 @@ PCA_VARIANCE = 256  # was 0.99
 PCA_MAX_COMPONENTS = 512
 
 # Cross-validation with grouping by example
-N_SPLITS = 3
+N_SPLITS = 2
 N_JOBS = -1          # parallelism for metrics that support it (not used heavily here)
 RANDOM_STATE = 0     # for PCA randomized SVD etc.
 
@@ -51,7 +55,7 @@ FILTER_OFFSET_EQ = None    # exactly equal to this offset (e.g., 0), or None
 FILTER_OFFSET_MAX = None  # include offsets <= this value (e.g., 1 includes 0 and 1)
 # Inclusive range filter: set to a 2-tuple/list (lo, hi). Use None to leave one side open.
 # Examples: (0, 1) keeps 0 and 1; (None, 3) keeps <=3; (2, None) keeps >=2
-FILTER_OFFSET_RANGE = (-500, -25)  # type: tuple[int | None, int | None] | None
+FILTER_OFFSET_RANGE = (0, 10)  # type: tuple[int | None, int | None] | None
 
 # Pretty table formatting in TXT
 COL_WIDTHS = dict(layer=6, n=9, comps=7, acc=10, auroc=10, ap=10, f1=10)
@@ -63,14 +67,14 @@ MIN_CLASS_COUNT = 5
 # Optional random token subsample for faster experiments
 # Set to an integer to sample that many tokens uniformly at random after filtering.
 # Leave as None to use all available tokens.
-N_TOKENS = 10000  # e.g., 100_000
+N_TOKENS = 20000  # e.g., 100_000
 
 def pca_n_components(d_model: int, variance: float = PCA_VARIANCE, cap: int = PCA_MAX_COMPONENTS) -> int:
     # We pass a float to PCA(n_components=variance) to keep explained variance; this cap is informative only.
     return min(cap, d_model)
 
 
-CLASSIFIER = "rank1"
+CLASSIFIER = "lowrank"
 # Compare mode: 'none' | 'dom' | 'whitened_dom' | 'both'
 COMPARE_MODE = "both"
 COMPARE_REG_EPS = 1e-3   # Tikhonov eps for whitening (Σ + eps I)^-1

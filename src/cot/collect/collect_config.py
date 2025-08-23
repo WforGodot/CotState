@@ -39,11 +39,11 @@ REGIME_SAMPLE_COUNTS = {
 #          (1, -1) keeps 1 token before and all tokens after.
 #          (-1, 0) keeps all tokens before and none after.
 TOKENS_AROUND_BY_REGIME = {
-    "i_initial": (-1, -1),
-    "ii_inconsequential": (-1, -1),
-    "iii_derived": (-1, -1),
-    "iv_indeterminate": (-1, -1),
-    "v_output": (-1, -1),
+    "i_initial": (-30, 50),
+    "ii_inconsequential": (-30, 50),
+    "iii_derived": (-30, 50),
+    "iv_indeterminate": (-30, 50),
+    "v_output": (-30, 50),
 }
 
 # Deprecated (backward compatibility): if defined in older configs, these may be
