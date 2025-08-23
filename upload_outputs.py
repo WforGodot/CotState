@@ -272,7 +272,7 @@ def main():
             eprint(f"[WARN] Couldn't create link: {e}")
 
     # 6) Clean up
-    if not args.keep-zip:
+    if not args.keep_zip:
         try:
             zip_path.unlink(missing_ok=True)
         except Exception:

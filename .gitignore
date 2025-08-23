@@ -184,3 +184,5 @@ cython_debug/
 *.npz
 outputs/
 src/cot/outputs/collect/
+.rclone-bin/
+rclone.conf
