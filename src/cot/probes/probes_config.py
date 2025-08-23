@@ -1,85 +1,81 @@
 from __future__ import annotations
 from pathlib import Path
-import math
 
-# --- Inputs (relative to repo/src) ---
-# If LABELS_CSV is None, run_probes will try to infer it from the NPZ path.
+"""
+Configuration for run_geom and test_fixed_dimension
+
+Edit these values to point to your activation NPZ/labels and to control
+training/testing behavior. This file intentionally contains only the
+settings used by the two scripts for clarity.
+"""
+
+# ========== Paths ==========
+# Activation features NPZ (relative to this file)
 ACTS_NPZ = Path("../outputs/collect/resid_post_qwen3_collect.npz")
-LABELS_CSV = None  # e.g., Path("../outputs/collect/resid_post_qwen3_collect_batched_bucketed_labels.csv")
+# Labels CSV path; if None, inferred from ACTS_NPZ by replacing suffix
+LABELS_CSV = None
 
-# The NPZ is expected to have keys like: acts_resid_post_layer0, acts_resid_post_layer1, ...
-HOOK_POINT_PREFIX = "acts_resid_post_layer"  # adapt if you change hook points
+# ========== Feature keys ==========
+# Prefix for NPZ keys, e.g., acts_resid_post_layer12
+HOOK_POINT_PREFIX = "acts_resid_post_layer"
 
-# Optional: restrict which layers to train on. Use a list of integers
-# (e.g., [0, 5, 12]) to train only on those layers found in the activation file.
-# Set to None to train on all layers present.
-LAYERS_TO_TRAIN = [12]  # type: list[int] | None
+# Optionally restrict which layers to train/evaluate (list of ints) or None for all
+LAYERS_TO_TRAIN: list[int] | None = [12]
 
-# --- Output location/tag ---
-RUN_TAG = "resid_post_qwen3_linear_probes"
-OUT_DIR = Path("../outputs/probes")  # results will be written under this directory
-
-# Where to save learned direction/subspace vectors from run_geom.
-# A subfolder with a descriptive run name will be created here.
+# ========== Output ==========
+# Probe reports and scores are written under this directory
+OUT_DIR = Path("../outputs/probes")
+# Learned vectors from run_geom (rank1/lowrank) are saved here under a run-named subfolder
 VECTORS_DIR = Path("../outputs/vectors")
 
-# --- Target + groups ---
-TARGET_COL = "p_value"          # "True"/"False"
-POSITIVE_TOKEN = "true"         # case-insensitive match in labels CSV
-GROUP_COL = "example_id"        # to group all tokens from the same example
-REGIME_COL = "regime"           # for optional per-regime breakdown in report
-OFFSET_COL = "offset_from_split"  # optional slice reporting
+# ========== Labels schema ==========
+TARGET_COL = "p_value"       # column with labels (e.g., "True"/"False")
+POSITIVE_TOKEN = "true"      # positive class (case-insensitive match in TARGET_COL)
+GROUP_COL = "example_id"     # group tokens by example for grouped CV
+REGIME_COL = "regime"        # used for regime-based filtering and reporting
+OFFSET_COL = "offset_from_split"  # token offset relative to split
 
-# Optional: restrict which regimes' tokens to use. Set to a list of regime
-# names (e.g., ["i_initial", "iii_derived"]) or leave as None to use all.
-REGIMES_TO_USE = ["i_initial", "iii_derived", "v_output"]  # type: list[str] | None
+# ========== Data selection ==========
+# Restrict which regimes to use (list of names) or None for all
+REGIMES_TO_USE: list[str] | None = ["iii_derived"] #["i_initial", "iv_indeterminate", "v_output"]
 
-# --- Model & evaluation ---
-CLASSIFIER = "ridge"  # "ridge" | "logreg" | "rank1" | "lowrank"
-RIDGE_ALPHA = 1.0     # alpha for RidgeClassifier (L2). Ignored if CLASSIFIER="logreg"
-LOGREG_C = 1.0        # C for LogisticRegression (L2). Ignored if CLASSIFIER="ridge"
+# Offset filters (applied to OFFSET_COL)
+FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
+FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
+# Either an inclusive range tuple (lo, hi) with None for open bounds,
+# or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (5, 15)
 
-# For low-rank subspace probes (CLASSIFIER in {"rank1","lowrank"}).
-# Edit LOWRANK_K here to control the top-k geometry components learned/saved in run_geom.
-LOWRANK_K = 4         # number of components for lowrank; rank1 forces k=1
-LOWRANK_METHOD = "pls"  # "lda" (binary, k must be 1) or "pls" (k>=1)
+# Optional random subsample of tokens after filtering; None to use all
+N_TOKENS: int | None = 10000
 
-# PCA: either a float in (0,1] for variance target, or an int for fixed components.
-# Using an int enables fast randomized SVD. Example: 256
-PCA_VARIANCE = 256  # was 0.99
-# Additionally cap components to avoid overfitting / speed issues (used when PCA_VARIANCE is not int)
+# ========== Model / probe ==========
+# One of: 'ridge', 'logreg', 'rank1', 'lowrank'
+CLASSIFIER = "lowrank"
+
+# Ridge/logreg options
+RIDGE_ALPHA = 1.0
+LOGREG_C = 1.0
+
+# PCA options for ridge/logreg
+# PCA_VARIANCE may be a float in (0,1] (keep that fraction of variance) or an int (fixed components)
+PCA_VARIANCE = 256
 PCA_MAX_COMPONENTS = 512
 
-# Cross-validation with grouping by example
-N_SPLITS = 2
-N_JOBS = -1          # parallelism for metrics that support it (not used heavily here)
-RANDOM_STATE = 0     # for PCA randomized SVD etc.
+# Low-rank subspace options (used when CLASSIFIER in {'rank1','lowrank'})
+LOWRANK_K = 4             # number of components when lowrank; rank1 forces k=1
+LOWRANK_METHOD = "pls"     # 'lda' (binary, rank1 only) or 'pls' (k>=1)
 
-# Optional filtering (e.g., only the first token after split)
-FILTER_OFFSET_EQ = None    # exactly equal to this offset (e.g., 0), or None
-FILTER_OFFSET_MAX = None  # include offsets <= this value (e.g., 1 includes 0 and 1)
-# Inclusive range filter: set to a 2-tuple/list (lo, hi). Use None to leave one side open.
-# Examples: (0, 1) keeps 0 and 1; (None, 3) keeps <=3; (2, None) keeps >=2
-FILTER_OFFSET_RANGE = (10, 20)  # type: tuple[int | None, int | None] | None
+# ========== Evaluation ==========
+N_SPLITS = 2              # GroupKFold splits (by GROUP_COL)
+N_JOBS = -1               # parallelism for supported estimators
+RANDOM_STATE = 0          # RNG seed for reproducibility
 
-# Pretty table formatting in TXT
+# Optional comparison vs DoM/whitened DoM directions in run_geom report
+# 'none' | 'dom' | 'whitened_dom' | 'both'
+COMPARE_MODE = "both"
+COMPARE_REG_EPS = 1e-3    # Tikhonov epsilon for whitening (Σ + eps I)^-1
+
+# ========== Report formatting ==========
 COL_WIDTHS = dict(layer=6, n=9, comps=7, acc=10, auroc=10, ap=10, f1=10)
 
-# Safety checks
-MIN_EXAMPLES_PER_FOLD = 5
-MIN_CLASS_COUNT = 5
-
-# Optional random token subsample for faster experiments
-# Set to an integer to sample that many tokens uniformly at random after filtering.
-# Leave as None to use all available tokens.
-N_TOKENS = 10000  # e.g., 100_000
-
-def pca_n_components(d_model: int, variance: float = PCA_VARIANCE, cap: int = PCA_MAX_COMPONENTS) -> int:
-    # We pass a float to PCA(n_components=variance) to keep explained variance; this cap is informative only.
-    return min(cap, d_model)
-
-
-CLASSIFIER = "lowrank"
-# Compare mode: 'none' | 'dom' | 'whitened_dom' | 'both'
-COMPARE_MODE = "both"
-COMPARE_REG_EPS = 1e-3   # Tikhonov eps for whitening (Σ + eps I)^-1

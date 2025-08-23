@@ -44,7 +44,7 @@ import run_geom  # reuse helpers for reading labels and layer keys
 BASE_VECTORS_DIR = (Path(__file__).resolve().parent / getattr(cfg, 'VECTORS_DIR', Path('../outputs/vectors'))).resolve()
 
 # Relative to BASE_VECTORS_DIR. Example: "L12__off_0_to_10__regs_all__unknownmodel/L12_split1_top4.stack.npy"
-VECTOR_FILE = "L12__off_0_to_10__regs_i_initial+iii_derived+v_output__Qwen-Qwen3-0.6B__2/L12_split1_top1.npy"  # set this to your vector file
+VECTOR_FILE = "L12__off_5_to_15__regs_i_initial+iv_indeterminate+v_output__Qwen-Qwen3-0.6B/L12_split1_top1.npy"  # set this to your vector file
 
 # If VECTOR_FILE is a stack (d, k), optionally choose a single component by index (0-based).
 COMPONENT_INDEX: Optional[int] = None  # e.g., 0 for top1; None to use all

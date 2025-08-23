@@ -24,8 +24,8 @@ import numpy as np
 BASE_VECTORS_DIR = Path(__file__).resolve().parents[2] / "cot" / "outputs" / "vectors"
 
 # Example (Windows-style paths OK). Use raw strings r"..." if needed.
-FILE_A = r"L12__off_0_to_10__regs_i_initial+iii_derived+v_output__Qwen-Qwen3-0.6B__2\L12_split1_top4.stack.npy"
-FILE_B = r"L12__off_10_to_20__regs_i_initial+iii_derived+v_output__Qwen-Qwen3-0.6B__2\L12_split2_top4.stack.npy"
+FILE_A = r"L12__off_set_2+4+6+8+10__regs_i_initial+iii_derived+v_final__Qwen-Qwen3-0.6B\L12_split1_top4.stack.npy"
+FILE_B = r"L12__off_set_2+4+6+8+10__regs_i_initial+iii_derived+v_final__Qwen-Qwen3-0.6B\L12_split2_top4.stack.npy"
 
 # Where to put the comparison reports (TXT)
 REPORTS_DIR = BASE_VECTORS_DIR / "compare_reports"
