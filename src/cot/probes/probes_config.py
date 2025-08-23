@@ -35,9 +35,14 @@ OFFSET_COL = "offset_from_split"  # optional slice reporting
 REGIMES_TO_USE = ["i_initial", "iii_derived", "v_output"]  # type: list[str] | None
 
 # --- Model & evaluation ---
-CLASSIFIER = "ridge"  # "ridge" or "logreg"
+CLASSIFIER = "ridge"  # "ridge" | "logreg" | "rank1" | "lowrank"
 RIDGE_ALPHA = 1.0     # alpha for RidgeClassifier (L2). Ignored if CLASSIFIER="logreg"
 LOGREG_C = 1.0        # C for LogisticRegression (L2). Ignored if CLASSIFIER="ridge"
+
+# For low-rank subspace probes (CLASSIFIER in {"rank1","lowrank"}).
+# Edit LOWRANK_K here to control the top-k geometry components learned/saved in run_geom.
+LOWRANK_K = 4         # number of components for lowrank; rank1 forces k=1
+LOWRANK_METHOD = "pls"  # "lda" (binary, k must be 1) or "pls" (k>=1)
 
 # PCA: either a float in (0,1] for variance target, or an int for fixed components.
 # Using an int enables fast randomized SVD. Example: 256
@@ -55,7 +60,7 @@ FILTER_OFFSET_EQ = None    # exactly equal to this offset (e.g., 0), or None
 FILTER_OFFSET_MAX = None  # include offsets <= this value (e.g., 1 includes 0 and 1)
 # Inclusive range filter: set to a 2-tuple/list (lo, hi). Use None to leave one side open.
 # Examples: (0, 1) keeps 0 and 1; (None, 3) keeps <=3; (2, None) keeps >=2
-FILTER_OFFSET_RANGE = (0, 10)  # type: tuple[int | None, int | None] | None
+FILTER_OFFSET_RANGE = (10, 20)  # type: tuple[int | None, int | None] | None
 
 # Pretty table formatting in TXT
 COL_WIDTHS = dict(layer=6, n=9, comps=7, acc=10, auroc=10, ap=10, f1=10)
@@ -67,7 +72,7 @@ MIN_CLASS_COUNT = 5
 # Optional random token subsample for faster experiments
 # Set to an integer to sample that many tokens uniformly at random after filtering.
 # Leave as None to use all available tokens.
-N_TOKENS = 20000  # e.g., 100_000
+N_TOKENS = 10000  # e.g., 100_000
 
 def pca_n_components(d_model: int, variance: float = PCA_VARIANCE, cap: int = PCA_MAX_COMPONENTS) -> int:
     # We pass a float to PCA(n_components=variance) to keep explained variance; this cap is informative only.

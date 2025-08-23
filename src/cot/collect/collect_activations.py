@@ -155,6 +155,10 @@ def main():
         dtype=args.dtype,
         trust_remote_code=args.trust_remote_code,
     )
+    try:
+        model.eval()
+    except Exception:
+        pass
     n_layers = model.cfg.n_layers
     layers = clamp_layers(cfg.LAYERS, n_layers)
     hook_point = args.hook_point
@@ -254,35 +258,36 @@ def main():
                     batch_tokens, remove_batch_dim=False, names_filter=names_filter
                 )
 
-            # Collect activations per layer & example
+            # Collect activations per layer; batch GPU->CPU transfer once per layer
             for lyr in layers:
                 acts = cache[hook_point, lyr]  # [B, max_L, d_model]
                 # Lazy-init memmaps after first forward when d_model is known
                 if lyr not in feats_mmap:
                     d_model = int(acts.shape[-1])
-                    # Use memmap per layer to stream writes; float16 to reduce size
                     mmap_path = out_dir / f".__tmp_{hook_point}_layer{lyr}.dat"
                     feats_mmap[lyr] = np.memmap(
                         mmap_path, dtype=np.float16, mode='w+', shape=(total_kept_tokens, d_model)
                     )
                     write_idx[lyr] = 0
+
+                # Build list of selected segments in the same order as label creation
+                segs: List[torch.Tensor] = []
                 for i, ((ab, bb), (aa, ba)) in enumerate(zip(before_ranges, after_ranges)):
-                    # before segment
                     if bb > ab:
-                        sel_bef = acts[i, ab:bb, :].detach().cpu().numpy().astype(np.float16, copy=False)
-                        n = sel_bef.shape[0]
-                        s = write_idx[lyr]
-                        e = s + n
-                        feats_mmap[lyr][s:e, :] = sel_bef
-                        write_idx[lyr] = e
-                    # after segment
+                        segs.append(acts[i, ab:bb, :])
                     if ba > aa:
-                        sel_aft = acts[i, aa:ba, :].detach().cpu().numpy().astype(np.float16, copy=False)
-                        n = sel_aft.shape[0]
-                        s = write_idx[lyr]
-                        e = s + n
-                        feats_mmap[lyr][s:e, :] = sel_aft
-                        write_idx[lyr] = e
+                        segs.append(acts[i, aa:ba, :])
+
+                if segs:
+                    batch_sel = torch.cat(segs, dim=0).to(dtype=torch.float16)
+                    cpu_batch = batch_sel.detach().to("cpu", non_blocking=True).contiguous()
+                    np_batch = cpu_batch.numpy()
+                    n = np_batch.shape[0]
+                    s = write_idx[lyr]
+                    e = s + n
+                    feats_mmap[lyr][s:e, :] = np_batch
+                    write_idx[lyr] = e
+
                 del acts  # shorten GPU lifetime
 
             # Labels + safe debug decode (no padded tail)
