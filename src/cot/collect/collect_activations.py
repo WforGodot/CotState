@@ -162,9 +162,16 @@ def main():
         key = int((ex["seq_len"] - 1) // bucket_size)
         buckets[key].append(ex)
 
-    feats_by_layer: Dict[int, List[np.ndarray]] = {i: [] for i in layers}
+    # Streaming storage: per-layer memmaps (float16) to avoid end-of-run concatenation
+    feats_mmap: Dict[int, np.memmap] = {}
+    write_idx: Dict[int, int] = {}
+    total_kept_tokens = 0
     labels: List[Tuple[int, str, str, int, int]] = []  # (example_id, regime, p_value, offset_from_split, token_abs_index)
     debug_lines: List[str] = []
+
+    # Precompute total tokens to keep for preallocation
+    for ex in pretokenized:
+        total_kept_tokens += int(ex["sel_end"] - ex["split"])
 
     batch_idx_global = 0
     for key in sorted(buckets.keys()):
@@ -195,9 +202,22 @@ def main():
             # Collect activations per layer & example
             for lyr in layers:
                 acts = cache[hook_point, lyr]  # [B, max_L, d_model]
+                # Lazy-init memmaps after first forward when d_model is known
+                if lyr not in feats_mmap:
+                    d_model = int(acts.shape[-1])
+                    # Use memmap per layer to stream writes; float16 to reduce size
+                    mmap_path = out_dir / f".__tmp_{hook_point}_layer{lyr}.dat"
+                    feats_mmap[lyr] = np.memmap(
+                        mmap_path, dtype=np.float16, mode='w+', shape=(total_kept_tokens, d_model)
+                    )
+                    write_idx[lyr] = 0
                 for i, (a, b) in enumerate(sel_ranges):
-                    sel = acts[i, a:b, :].detach().cpu().numpy()
-                    feats_by_layer[lyr].append(sel)
+                    sel = acts[i, a:b, :].detach().cpu().numpy().astype(np.float16, copy=False)
+                    n = sel.shape[0]
+                    s = write_idx[lyr]
+                    e = s + n
+                    feats_mmap[lyr][s:e, :] = sel
+                    write_idx[lyr] = e
                 del acts  # shorten GPU lifetime
 
             # Labels + safe debug decode (no padded tail)
@@ -237,18 +257,39 @@ def main():
 
     # Finalize & save
     stacked: Dict[str, np.ndarray] = {}
-    for lyr, chunks in feats_by_layer.items():
-        if len(chunks) == 0:
-            continue
-        arr = np.concatenate(chunks, axis=0)  # [N_tokens, d_model]
-        stacked[f"acts_{hook_point}_layer{lyr}"] = arr
+    # Finalize memmaps into NPZ dictionary without compression
+    for lyr, mmap_arr in feats_mmap.items():
+        # Sanity: ensure we've written the expected number of rows
+        if write_idx.get(lyr, 0) != total_kept_tokens:
+            # Trim or pad with zeros as a defensive fallback
+            n_written = write_idx.get(lyr, 0)
+            if n_written < total_kept_tokens:
+                # pad
+                pad_rows = total_kept_tokens - n_written
+                d_model = mmap_arr.shape[1]
+                pad = np.zeros((pad_rows, d_model), dtype=np.float16)
+                mmap_arr[n_written:total_kept_tokens, :] = pad
+            else:
+                # trim view
+                mmap_arr = mmap_arr[:total_kept_tokens, :]
+        stacked[f"acts_{hook_point}_layer{lyr}"] = mmap_arr
 
     run_tag = f"{hook_point}_qwen3_collect"
     datagen_csv, out_dir = _paths()
     ensure_dir(out_dir)
 
     out_npz = out_dir / f"{run_tag}.npz"
-    np.savez_compressed(out_npz, **stacked)
+    # Save uncompressed for speed; keeps key structure the same
+    np.savez(out_npz, **stacked)
+
+    # Best-effort cleanup of temporary memmap backing files
+    for _lyr, mmap_arr in feats_mmap.items():
+        try:
+            fname = getattr(mmap_arr, 'filename', None)
+            if fname:
+                Path(str(fname)).unlink(missing_ok=True)
+        except Exception:
+            pass
 
     labels_cols = ["example_id", "regime", "p_value", "offset_from_split", "token_index_in_seq"]
     labels_df = pd.DataFrame(labels, columns=labels_cols)

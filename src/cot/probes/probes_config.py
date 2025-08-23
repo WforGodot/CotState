@@ -31,13 +31,14 @@ CLASSIFIER = "ridge"  # "ridge" or "logreg"
 RIDGE_ALPHA = 1.0     # alpha for RidgeClassifier (L2). Ignored if CLASSIFIER="logreg"
 LOGREG_C = 1.0        # C for LogisticRegression (L2). Ignored if CLASSIFIER="ridge"
 
-# PCA: keep this much explained variance (0< x <=1). 0.99 is a strong default.
-PCA_VARIANCE = 0.99
-# Additionally cap components to avoid overfitting / speed issues
+# PCA: either a float in (0,1] for variance target, or an int for fixed components.
+# Using an int enables fast randomized SVD. Example: 256
+PCA_VARIANCE = 256  # was 0.99
+# Additionally cap components to avoid overfitting / speed issues (used when PCA_VARIANCE is not int)
 PCA_MAX_COMPONENTS = 512
 
 # Cross-validation with grouping by example
-N_SPLITS = 5
+N_SPLITS = 3
 N_JOBS = -1          # parallelism for metrics that support it (not used heavily here)
 RANDOM_STATE = 0     # for PCA randomized SVD etc.
 

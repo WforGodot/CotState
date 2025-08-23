@@ -100,10 +100,14 @@ def _layer_keys(npz: np.lib.npyio.NpzFile) -> List[Tuple[int, str]]:
 
 
 def _build_pipeline(d_model: int) -> Pipeline:
+    # Support either variance target (float in (0,1]) or integer component count
     keep_variance = isinstance(cfg.PCA_VARIANCE, float) and 0 < cfg.PCA_VARIANCE < 1.0
-    n_components = (
-        cfg.PCA_VARIANCE if keep_variance else min(cfg.PCA_MAX_COMPONENTS, d_model)
-    )
+    if keep_variance:
+        n_components = cfg.PCA_VARIANCE
+    elif isinstance(cfg.PCA_VARIANCE, int):
+        n_components = min(int(cfg.PCA_VARIANCE), d_model)
+    else:
+        n_components = min(cfg.PCA_MAX_COMPONENTS, d_model)
     pca = PCA(
         n_components=n_components,
         # float target variance requires 'full' (or 'auto'); randomized only works with integer n_components
@@ -272,6 +276,8 @@ def main():
                 raise ValueError(
                     f"After subsetting, length mismatch for layer {layer_idx}: X has {len(X)}, labels have {len(df)}"
                 )
+        # Upcast once to float32 to speed downstream sklearn ops and reduce implicit upcasts
+        X = X.astype(np.float32, copy=False)
         d_model = X.shape[1]
         pipe = _build_pipeline(d_model)
 
@@ -279,6 +285,7 @@ def main():
         # Accumulate out-of-fold predictions for per-regime summary
         oof_pred = np.empty_like(y)
         oof_score = np.full_like(y, fill_value=np.nan, dtype=float)
+        ncomp_for_layer: int | None = None
 
         # Precompute splits to show inner progress
         splits = list(gkf.split(X, y, groups))
@@ -287,6 +294,11 @@ def main():
             X_tr, X_te = X[train_idx], X[test_idx]
             y_tr, y_te = y[train_idx], y[test_idx]
             pipe.fit(X_tr, y_tr)
+            if ncomp_for_layer is None:
+                try:
+                    ncomp_for_layer = int(getattr(pipe.named_steps["pca"], "n_components_", 0))
+                except Exception:
+                    ncomp_for_layer = None
             y_hat = pipe.predict(X_te)
 
             # decision function / probability if available
@@ -325,21 +337,10 @@ def main():
         )
         rows_for_csv.append(agg)
 
-        # For report table
-        # PCA actual component count: fit once on full data only to report n_components_
-        # (safe: PCA won’t leak labels)
-        keep_variance = isinstance(cfg.PCA_VARIANCE, float) and 0 < cfg.PCA_VARIANCE < 1.0
-        n_components = cfg.PCA_VARIANCE if keep_variance else min(cfg.PCA_MAX_COMPONENTS, d_model)
-        pca_probe = Pipeline([
-            ("scale", StandardScaler(with_mean=True, with_std=True)),
-            ("pca", PCA(
-                n_components=n_components,
-                svd_solver="full" if keep_variance else "randomized",
-                random_state=cfg.RANDOM_STATE
-            )),
-        ])
-        pca_probe.fit(X)  # unsupervised; safe for reporting
-        ncomp = pca_probe.named_steps["pca"].n_components_
+        # For report table: use PCA component count from first fold fit
+        ncomp = int(ncomp_for_layer) if ncomp_for_layer is not None else int(
+            getattr(pipe.named_steps.get("pca", PCA()), "n_components", 0)
+        )
         table_lines.append(_format_table_row(layer_idx, len(X), ncomp, agg) + "\n")
 
         all_layer_preds[layer_idx] = oof_pred

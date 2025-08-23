@@ -3,8 +3,9 @@ Policy:
 - Ensure `torch` is installed (any version/CUDA). Do NOT upgrade/downgrade it.
 - Force-reinstall NumPy (same version as currently installed).
 - For all other libs, install/upgrade ONLY if below a 'reasonable' minimum.
-- Use a constraints file to pin the currently-installed torch (so pip won't touch it).
-- Write manifest to outputs/install/manifest.json and pip log to outputs/install/pip.log.
+- NEVER install `torchvision` or `torchaudio`.
+- Pin current `torch` in a constraints file so other installs can't upgrade it.
+- Write manifest + pip log to outputs/install/.
 """
 
 import json
@@ -12,10 +13,9 @@ import importlib
 import subprocess
 import sys
 from pathlib import Path
-
 from packaging.version import parse as V
 
-# ---- Reasonable minimums (tune as you like; these are conservative) ----
+# ---- Reasonable minimums (adjust if you like) ----
 MIN_OK = {
     "transformers":      "4.37.0",
     "accelerate":        "0.26.0",
@@ -28,16 +28,14 @@ MIN_OK = {
     "transformer_lens":  "2.0.0",
 }
 
-# If you *also* want to enforce torchaudio/torchvision, set these True.
-ENFORCE_TORCHAUDIO = False
-ENFORCE_TORCHVISION = False
-
 def pip_install(args, log_path: Path):
-    cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", "--upgrade-strategy", "only-if-needed", "--log", str(log_path)]
+    cmd = [sys.executable, "-m", "pip", "install",
+           "--no-cache-dir", "--upgrade-strategy", "only-if-needed",
+           "--log", str(log_path)]
     print("pip install", " ".join(args))
     subprocess.check_call(cmd + args)
 
-def mod_version(name):
+def mod_version(name: str):
     try:
         m = __import__(name)
         return getattr(m, "__version__", None)
@@ -45,27 +43,16 @@ def mod_version(name):
         return None
 
 def ensure_torch(log_file: Path):
-    """Ensure torch exists (no upgrades)."""
-    torch_ver = mod_version("torch")
-    if torch_ver is None:
-        pip_install(["torch"], log_file)  # let pip pick appropriate wheel
-        torch_ver = mod_version("torch")
-    return torch_ver
+    """Ensure torch exists (no upgrades). Do NOT install torchvision/torchaudio."""
+    if mod_version("torch") is None:
+        pip_install(["torch"], log_file)
 
-def write_constraints(out_dir: Path):
-    """Pin currently-installed torch (+audio/vision if present/enforced)."""
+def write_constraints(out_dir: Path) -> Path:
+    """Pin currently-installed torch so nothing upgrades it."""
     lines = []
     tv = mod_version("torch")
     if tv:
         lines.append(f"torch=={tv}")
-    if ENFORCE_TORCHAUDIO:
-        tav = mod_version("torchaudio")
-        if tav:
-            lines.append(f"torchaudio=={tav}")
-    if ENFORCE_TORCHVISION:
-        tvv = mod_version("torchvision")
-        if tvv:
-            lines.append(f"torchvision=={tvv}")
     cpath = out_dir / "constraints.txt"
     cpath.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     return cpath
@@ -77,20 +64,16 @@ def reinstall_numpy_same_version(log_file: Path):
     pip_install(["--force-reinstall", pin], log_file)
 
 def ensure_reasonable_versions(log_file: Path, constraints_path: Path):
-    """Install/upgrade ONLY the packages that are missing or below the MIN_OK version."""
+    """Install/upgrade ONLY packages that are missing or below MIN_OK."""
     to_fix = []
     for name, min_v in MIN_OK.items():
         cur = mod_version(name)
         if cur is None or V(cur) < V(min_v):
-            # Ask for at least min version; let pip resolve deps (but pin torch via -c)
             to_fix.append(f"{name}>={min_v}")
-
-    if not to_fix:
+    if to_fix:
+        pip_install(["-c", str(constraints_path)] + to_fix, log_file)
+    else:
         print("All non-PyTorch libraries already at reasonable versions; skipping.")
-        return
-
-    # Important: use constraints to prevent torch upgrades; avoid --upgrade here.
-    pip_install(["-c", str(constraints_path)] + to_fix, log_file)
 
 def write_manifest(out_dir: Path):
     importlib.invalidate_caches()
@@ -106,7 +89,6 @@ def write_manifest(out_dir: Path):
         torch_cuda = getattr(getattr(torch, "version", None), "cuda", None)
     except Exception:
         pass
-
     manifest = {
         "torch": safe_ver("torch"),
         "torch_cuda": torch_cuda,
@@ -133,10 +115,10 @@ def main():
         try: log_file.unlink()
         except Exception: pass
 
-    ensure_torch(log_file)                        # make sure torch exists (no upgrades)
-    constraints = write_constraints(out_dir)      # pin current torch so nothing touches it
-    reinstall_numpy_same_version(log_file)        # only forced reinstall
-    ensure_reasonable_versions(log_file, constraints)  # touch others only if too old/missing
+    ensure_torch(log_file)                      # torch only; no vision/audio
+    constraints = write_constraints(out_dir)    # pin torch version
+    reinstall_numpy_same_version(log_file)      # only forced reinstall
+    ensure_reasonable_versions(log_file, constraints)
     write_manifest(out_dir)
 
     print("✅ Done. Manifest written to outputs/install/manifest.json")

@@ -2,12 +2,33 @@ import csv
 import json
 import os
 import random
+from pathlib import Path
 from typing import Dict, List, Set, Tuple, Optional
 
 import datagen_config as cfg
 
 from logic_builder import build_forward_logic_instance
 from cot_builder import build_cot_and_annotation 
+
+
+# --------------------------
+# Output pathing (relative to src/)
+# --------------------------
+def _project_root() -> Path:
+    # This file lives at src/cot/datagen/generate_questions.py
+    # parents[2] -> src/
+    return Path(__file__).resolve().parents[2]
+
+def _out_dir() -> Path:
+    # Mirror collect_activations.py behavior: write under src/cot/outputs/datagen
+    return _project_root() / "cot" / "outputs" / "datagen"
+
+def _out_paths() -> Tuple[Path, Path, Path]:
+    odir = _out_dir()
+    jsonl = odir / getattr(cfg, "JSONL_FILENAME", "proplogic_dataset.jsonl")
+    csvf = odir / getattr(cfg, "CSV_FILENAME", "proplogic_questions.csv")
+    dbg  = odir / getattr(cfg, "DEBUG_FILENAME", "proplogic_debug.txt")
+    return jsonl, csvf, dbg
 
 
 # --------------------------
@@ -358,15 +379,23 @@ def generate_all():
 
 if __name__ == "__main__":
     dataset = generate_all()
-    print(f"Generated {len(dataset)} items "
-          f"({', '.join(f'{k}:{v}' for k,v in cfg.QUESTIONS_PER_REGIME.items())}).")
+    print(
+        f"Generated {len(dataset)} items "
+        f"({', '.join(f'{k}:{v}' for k,v in cfg.QUESTIONS_PER_REGIME.items())})."
+    )
 
-    if cfg.OUTPUT_JSONL_PATH:
-        write_jsonl(cfg.OUTPUT_JSONL_PATH, dataset)
-        print(" -", cfg.OUTPUT_JSONL_PATH)
-    if cfg.OUTPUT_CSV_PATH:
-        write_csv(cfg.OUTPUT_CSV_PATH, dataset)
-        print(" -", cfg.OUTPUT_CSV_PATH)
-    if cfg.OUTPUT_DEBUG_TXT:
-        write_debug_txt(cfg.OUTPUT_DEBUG_TXT, dataset)
-        print(" -", cfg.OUTPUT_DEBUG_TXT)
+    jsonl_path, csv_path, debug_path = _out_paths()
+
+    # Ensure directory exists
+    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Always write under src/cot/outputs/datagen (independent of CWD)
+    if jsonl_path:
+        write_jsonl(str(jsonl_path), dataset)
+        print(" -", jsonl_path)
+    if csv_path:
+        write_csv(str(csv_path), dataset)
+        print(" -", csv_path)
+    if debug_path:
+        write_debug_txt(str(debug_path), dataset)
+        print(" -", debug_path)
