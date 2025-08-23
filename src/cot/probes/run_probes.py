@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import argparse
 from pathlib import Path
 from datetime import datetime
 import re
@@ -168,13 +169,14 @@ def _write_report(
     table_lines: List[str],
     per_layer_rows: List[Dict],
     per_regime_summary: List[str],
+    n_splits: int,
 ):
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("w", encoding="utf-8") as f:
         for line in header_lines:
             f.write(line.rstrip() + "\n")
         f.write("\n")
-        f.write("Per-layer results (grouped 5-fold CV, metrics in % unless noted):\n")
+        f.write(f"Per-layer results (grouped {n_splits}-fold CV, metrics in % unless noted):\n")
         f.write("".join(table_lines))
         f.write("\n")
         if per_regime_summary:
@@ -184,6 +186,13 @@ def _write_report(
 
 
 def main():
+    # Optional CLI to subsample tokens for faster experimentation
+    ap = argparse.ArgumentParser(description="Train layerwise probes on activations")
+    ap.add_argument("--n_tokens", type=int, default=None,
+                    help="Randomly sample this many tokens from the dataset before training.")
+    ap.add_argument("--sample_seed", type=int, default=None,
+                    help="Random seed for token sampling (defaults to cfg.RANDOM_STATE).")
+    cli_args = ap.parse_args()
     npz_path = (Path(__file__).parent / cfg.ACTS_NPZ).resolve()
     labels_csv = cfg.LABELS_CSV
     if labels_csv is None:
@@ -203,6 +212,15 @@ def main():
     scores_csv = run_dir / "layer_scores.csv"
 
     df = _read_labels(labels_csv)
+    # Optional random token subsample (after any filtering in _read_labels)
+    target_n = None
+    if getattr(cli_args, 'n_tokens', None) is not None and cli_args.n_tokens > 0:
+        target_n = int(cli_args.n_tokens)
+    elif getattr(cfg, 'N_TOKENS', None) is not None and int(getattr(cfg, 'N_TOKENS')) > 0:
+        target_n = int(getattr(cfg, 'N_TOKENS'))
+    if target_n is not None and len(df) > target_n:
+        seed = cli_args.sample_seed if getattr(cli_args, 'sample_seed', None) is not None else getattr(cfg, 'RANDOM_STATE', 0)
+        df = df.sample(n=target_n, random_state=seed)
     # Keep track of row indices relative to the unfiltered labels CSV, so we can
     # subset activation matrices to match any label filtering (e.g., FILTER_OFFSET_EQ)
     row_idx = df.index.to_numpy()
@@ -414,7 +432,7 @@ def main():
                 per_regime_lines.append(f"  - {reg:<18} Acc={acc:.3f}  AUROC={auc:.3f}")
 
     # Write TXT
-    _write_report(report_txt, header, table_lines, rows_for_csv, per_regime_lines)
+    _write_report(report_txt, header, table_lines, rows_for_csv, per_regime_lines, cfg.N_SPLITS)
 
     print(f"[DONE] Report: {report_txt}")
     print(f"[DONE] Scores: {scores_csv}")
