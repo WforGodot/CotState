@@ -13,7 +13,7 @@ HOOK_POINT_PREFIX = "acts_resid_post_layer"  # adapt if you change hook points
 # Optional: restrict which layers to train on. Use a list of integers
 # (e.g., [0, 5, 12]) to train only on those layers found in the activation file.
 # Set to None to train on all layers present.
-LAYERS_TO_TRAIN = [21]  # type: list[int] | None
+LAYERS_TO_TRAIN = [21, 24, 27]  # type: list[int] | None
 
 # --- Output location/tag ---
 RUN_TAG = "resid_post_qwen3_linear_probes"
@@ -44,7 +44,7 @@ RANDOM_STATE = 0     # for PCA randomized SVD etc.
 
 # Optional filtering (e.g., only the first token after split)
 FILTER_OFFSET_EQ = None    # exactly equal to this offset (e.g., 0), or None
-FILTER_OFFSET_MAX = 20  # include offsets <= this value (e.g., 1 includes 0 and 1)
+FILTER_OFFSET_MAX = None  # include offsets <= this value (e.g., 1 includes 0 and 1)
 # Inclusive range filter: set to a 2-tuple/list (lo, hi). Use None to leave one side open.
 # Examples: (0, 1) keeps 0 and 1; (None, 3) keeps <=3; (2, None) keeps >=2
 FILTER_OFFSET_RANGE = None  # type: tuple[int | None, int | None] | None
