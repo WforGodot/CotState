@@ -44,7 +44,7 @@ RANDOM_STATE = 0     # for PCA randomized SVD etc.
 
 # Optional filtering (e.g., only the first token after split)
 FILTER_OFFSET_EQ = None    # exactly equal to this offset (e.g., 0), or None
-FILTER_OFFSET_MAX = 10  # include offsets <= this value (e.g., 1 includes 0 and 1)
+FILTER_OFFSET_MAX = 20  # include offsets <= this value (e.g., 1 includes 0 and 1)
 # Inclusive range filter: set to a 2-tuple/list (lo, hi). Use None to leave one side open.
 # Examples: (0, 1) keeps 0 and 1; (None, 3) keeps <=3; (2, None) keeps >=2
 FILTER_OFFSET_RANGE = None  # type: tuple[int | None, int | None] | None
@@ -59,8 +59,11 @@ MIN_CLASS_COUNT = 5
 # Optional random token subsample for faster experiments
 # Set to an integer to sample that many tokens uniformly at random after filtering.
 # Leave as None to use all available tokens.
-N_TOKENS = 5000  # e.g., 100_000
+N_TOKENS = 20000  # e.g., 100_000
 
 def pca_n_components(d_model: int, variance: float = PCA_VARIANCE, cap: int = PCA_MAX_COMPONENTS) -> int:
     # We pass a float to PCA(n_components=variance) to keep explained variance; this cap is informative only.
     return min(cap, d_model)
+
+
+CLASSIFIER = "rank1"
