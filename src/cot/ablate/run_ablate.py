@@ -179,22 +179,20 @@ def main():
     # Hook point (supports 'resid_post' and NEW 'resid_pre')
     hook_point_norm = _normalize_hook_point(str(getattr(cfg, "HOOK_POINT", "resid_post")))
 
-    # Build run name
+    # Build simplified run name: vecset, layers, mode; append _1, _2... if exists
     def _sanitize(s: str) -> str:
         return re.sub(r"[^A-Za-z0-9._+-]", "-", s)
-    regs_str = "all" if cfg.REGIMES_TO_USE is None else "+".join(_sanitize(r) for r in cfg.REGIMES_TO_USE)
     mode = str(getattr(cfg, 'ABLATED_MODE', 'reflect')).lower()
     gamma = float(getattr(cfg, 'PUSH_GAMMA', 1.0))
     mode_str = f"mode_{mode}" + (f"_g{gamma:.2f}" if mode == 'push' else "")
     layers_str = "+".join([f"L{L}" for L in layers])
     vec_stem = _sanitize(vectors_dir.name)
-    base_name = f"{layers_str}_{hook_point_norm}__vecset_{vec_stem}__regs_{regs_str}__prior{int(cfg.PRIOR_TOKENS)}__{mode_str}__{_sanitize(cfg.MODEL_NAME)}"
+    base_name = f"ablate__{vec_stem}__{layers_str}__{mode_str}"
     run_name = base_name
     k = 1
-    out_dir = out_dir  # rename for clarity
     while (out_dir / run_name).exists():
+        run_name = f"{base_name}_{k}"
         k += 1
-        run_name = f"{base_name}__{k}"
     run_dir = out_dir / run_name
     ensure_dir(run_dir)
     report_path = run_dir / "report.txt"
@@ -433,6 +431,11 @@ def main():
         return
 
     df_out = pd.DataFrame(rows_out)
+
+    # Mark low-margin examples based on absolute pre-ablation margin
+    low_thr = float(getattr(cfg, 'LOW_MARGIN_ABS_THRESH', 0.4))
+    if 'base_margin' in df_out.columns:
+        df_out['is_low_margin'] = (df_out['base_margin'].abs() < low_thr).astype(int)
     df_out.to_csv(per_ex_csv, index=False)
 
     # Aggregate summaries
@@ -458,6 +461,7 @@ def main():
         )
 
     all_sum = _summ(df_out)
+    low_sum = _summ(df_out[df_out['is_low_margin'] == 1]) if 'is_low_margin' in df_out.columns else None
     true_sum = _summ(df_out[df_out["label"] == "True"]) if (df_out["label"] == "True").any() else None
     false_sum = _summ(df_out[df_out["label"] == "False"]) if (df_out["label"] == "False").any() else None
 
@@ -472,6 +476,7 @@ def main():
     lines.append(f"Regimes: {', '.join(cfg.REGIMES_TO_USE)} | Prior tokens: {cfg.PRIOR_TOKENS}")
     lines.append(f"Mode: {mode}" + (f" (gamma={gamma})" if mode == 'push' else ""))
     lines.append(f"Samples: {len(df_out)} (requested={cfg.N_SAMPLES})")
+    lines.append(f"Low-margin threshold: |base margin| < {low_thr}")
     lines.append("")
     # Tokenization notes (IDs for each provided variant)
     true_kv = ", ".join([f"{k}→{v}" for k, v in true_map.items()])
@@ -494,6 +499,8 @@ def main():
         ]
 
     lines.extend(_fmt_summ("Overall", all_sum))
+    lines.append("")
+    lines.extend(_fmt_summ("Low-margin", low_sum))
     lines.append("")
     lines.extend(_fmt_summ("Label=True", true_sum))
     lines.append("")

@@ -33,7 +33,7 @@ EMPTY_CACHE_EVERY_N_BATCHES = 0  # set >0 to periodically free CUDA cache
 
 # ========== Hook / layer ==========
 # Hook point name without the "hook_" prefix (e.g., "resid_pre", "resid_post", "mlp_out").
-HOOK_POINT = "resid_pre"
+HOOK_POINT = "resid_post"
 # Layers to modify (0-based). If None, falls back to single LAYER.
 LAYERS: list[int] | None = [10]
 # Backward compat: if LAYERS is None, use this single layer
@@ -54,6 +54,10 @@ PUSH_GAMMA = 1.0
 # Number of examples to sample; None for all available after filtering.
 N_SAMPLES: int | None = 300
 
+# Absolute-margin threshold for reporting a separate low-margin subset
+# (examples with |base margin| < LOW_MARGIN_ABS_THRESH before ablation)
+LOW_MARGIN_ABS_THRESH = 0.4
+
 # Strings used to pick target token ids for measuring logit shifts.
 # Provide multiple variants; we use the first token id of each string.
 # Duplicates are deduplicated. Backward-compat: TRUE_STR/FALSE_STR also supported.
@@ -63,4 +67,4 @@ FALSE_STRINGS = [" False", " false", "False", "false", "0"]
 # FALSE_STR = "0"
 
 # Random seed for sampling
-RANDOM_STATE = 0
+RANDOM_STATE = 60
