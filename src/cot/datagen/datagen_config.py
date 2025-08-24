@@ -12,7 +12,7 @@ QUESTIONS_PER_REGIME = {
     "iv_indeterminate": 100,
     "v_output": 100,
     "vi_single_use": 100,
-    "vii_max_use": 100,
+    "vii_max_use": 3000,
 }
 
 # Counts per bucket (inclusive ranges)

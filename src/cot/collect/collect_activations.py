@@ -23,7 +23,7 @@ from model_utils import (
     decode_slice,
 )
 
-REGIMES = ["i_initial", "ii_inconsequential", "iii_derived", "iv_indeterminate", "v_output"]
+REGIMES = ["i_initial", "ii_inconsequential", "iii_derived", "iv_indeterminate", "v_output", "vi_single_use", "vii_max_use"]
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]

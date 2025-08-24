@@ -20,7 +20,7 @@ LABELS_CSV = None
 HOOK_POINT_PREFIX = "acts_resid_post_layer"
 
 # Optionally restrict which layers to train/evaluate (list of ints) or None for all
-LAYERS_TO_TRAIN: list[int] | None = [12]
+LAYERS_TO_TRAIN: list[int] | None = None
 
 # ========== Output ==========
 # Probe reports and scores are written under this directory
@@ -37,17 +37,18 @@ OFFSET_COL = "offset_from_split"  # token offset relative to split
 
 # ========== Data selection ==========
 # Restrict which regimes to use (list of names) or None for all
-REGIMES_TO_USE: list[str] | None = ["v_output"] #["i_initial", "iv_indeterminate", "v_output"]
+# Choose from ["i_initial", "ii_inconsequential", "iii_derived", "iv_indeterminate", "v_output", "vi_single_use", "vii_max_use"]
+REGIMES_TO_USE: list[str] | None = ["vii_max_use"]
 
 # Offset filters (applied to OFFSET_COL)
 FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
 FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
 # Either an inclusive range tuple (lo, hi) with None for open bounds,
 # or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
-FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = [0,2,4,6,8]
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = None
 
 # Optional random subsample of tokens after filtering; None to use all
-N_TOKENS: int | None = None
+N_TOKENS: int | None = 10000
 
 # ========== Model / probe ==========
 # One of: 'ridge', 'logreg', 'rank1', 'lowrank'
@@ -73,7 +74,7 @@ RANDOM_STATE = 0          # RNG seed for reproducibility
 
 # Optional comparison vs DoM/whitened DoM directions in run_geom report
 # 'none' | 'dom' | 'whitened_dom' | 'both'
-COMPARE_MODE = "both"
+COMPARE_MODE = "dom"
 COMPARE_REG_EPS = 1e-3    # Tikhonov epsilon for whitening (Σ + eps I)^-1
 
 # Explicit train/test split support (from collect_activations labels 'split' column)
