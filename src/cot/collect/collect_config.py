@@ -60,7 +60,11 @@ SEED = 124
 
 # Fraction of candidate tokens to sample uniformly at random (per-token)
 # Set to 1.0 to keep all; None to disable sampling. Example: 0.5
-TOKEN_SAMPLE_FRACTION = 1.0
+TOKEN_SAMPLE_FRACTION = 0.15
+
+# Train/test split across examples (entire CoT assigned to one split)
+TRAIN_FRACTION = 0.8   # remainder goes to test
+SPLIT_SEED = 124
 
 # -----------------------------
 # I/O (relative to repo/src/)

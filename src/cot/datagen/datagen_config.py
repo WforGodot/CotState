@@ -10,7 +10,7 @@ QUESTIONS_PER_REGIME = {
     "ii_inconsequential": 0,
     "iii_derived": 0,
     "iv_indeterminate": 0,
-    "v_output": 500,
+    "v_output": 3000,
 }
 
 # Counts per bucket (inclusive ranges)

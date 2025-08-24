@@ -44,10 +44,10 @@ FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
 FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
 # Either an inclusive range tuple (lo, hi) with None for open bounds,
 # or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
-FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (0, 10)
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = [0,2,4,6,8]
 
 # Optional random subsample of tokens after filtering; None to use all
-N_TOKENS: int | None = 20000
+N_TOKENS: int | None = None
 
 # ========== Model / probe ==========
 # One of: 'ridge', 'logreg', 'rank1', 'lowrank'
@@ -76,6 +76,10 @@ RANDOM_STATE = 0          # RNG seed for reproducibility
 COMPARE_MODE = "both"
 COMPARE_REG_EPS = 1e-3    # Tikhonov epsilon for whitening (Σ + eps I)^-1
 
+# Explicit train/test split support (from collect_activations labels 'split' column)
+EXPLICIT_SPLIT = True
+TRAIN_SPLIT_NAME = 'train'
+TEST_SPLIT_NAME = 'test'
+
 # ========== Report formatting ==========
 COL_WIDTHS = dict(layer=6, n=9, comps=7, acc=10, auroc=10, ap=10, f1=10)
-

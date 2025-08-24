@@ -167,9 +167,11 @@ def main():
 
     # Pretokenize to CPU & compute keep ranges (so we can bucket by length cleanly)
     pretokenized: List[Dict] = []
-    rng = np.random.RandomState(getattr(cfg, 'SEED', 0))
+    rng_tok = np.random.RandomState(getattr(cfg, 'SEED', 0))
     sample_frac = float(getattr(cfg, 'TOKEN_SAMPLE_FRACTION', 1.0) or 1.0)
     sample_frac = max(0.0, min(1.0, sample_frac))
+    rng_split = np.random.RandomState(getattr(cfg, 'SPLIT_SEED', 0))
+    train_frac = float(getattr(cfg, 'TRAIN_FRACTION', 0.8))
     for _, row in rows.iterrows():
         try:
             p_idx = int(row["p_char_index"])
@@ -198,6 +200,9 @@ def main():
         if not (a_before < b_before or a_after < b_after):
             continue
 
+        # Assign example to train/test split
+        split_name = 'train' if (rng_split.rand() < train_frac) else 'test'
+
         # Build keep indices with optional random subsampling per token
         keep_idxs: List[int] = []
         if b_before > a_before:
@@ -205,14 +210,14 @@ def main():
                 keep_idxs.extend(range(a_before, b_before))
             else:
                 n = b_before - a_before
-                m = rng.rand(n) < sample_frac
+                m = rng_tok.rand(n) < sample_frac
                 keep_idxs.extend([a_before + i for i in range(n) if m[i]])
         if b_after > a_after:
             if sample_frac >= 1.0:
                 keep_idxs.extend(range(a_after, b_after))
             else:
                 n = b_after - a_after
-                m = rng.rand(n) < sample_frac
+                m = rng_tok.rand(n) < sample_frac
                 keep_idxs.extend([a_after + i for i in range(n) if m[i]])
 
         pretokenized.append({
@@ -227,6 +232,7 @@ def main():
             "a_after": a_after,
             "b_after": b_after,
             "keep_idxs": keep_idxs,
+            "ex_split": split_name,
         })
 
     if len(pretokenized) == 0:
@@ -266,6 +272,7 @@ def main():
 
             token_tensors = [ex["tokens"] for ex in chunk]  # each [1, L_i]
             split_tok = [ex["split"] for ex in chunk]
+            ex_split_names = [ex["ex_split"] for ex in chunk]
             keep_lists = [ex.get("keep_idxs", []) for ex in chunk]
             seq_lens = [ex["seq_len"] for ex in chunk]
             regimes = [ex["regime"] for ex in chunk]
@@ -313,13 +320,19 @@ def main():
                 del acts  # shorten GPU lifetime
 
             # Labels + safe debug decode (no padded tail)
-            for i, (ex_id, regime, p_val, keep, L, sp) in enumerate(
-                zip(ex_ids, regimes, pvals, keep_lists, seq_lens, split_tok)
+            train_tokens = 0
+            test_tokens = 0
+            for i, (ex_id, regime, p_val, keep, L, sp, ex_split) in enumerate(
+                zip(ex_ids, regimes, pvals, keep_lists, seq_lens, split_tok, ex_split_names)
             ):
                 # labels for sampled tokens
                 for tok_idx in keep:
                     offset = int(tok_idx - sp)
-                    labels.append((ex_id, regime, p_val, offset, tok_idx))
+                    labels.append((ex_id, regime, p_val, offset, tok_idx, ex_split))
+                    if ex_split == 'train':
+                        train_tokens += 1
+                    else:
+                        test_tokens += 1
 
                 if len(debug_lines) < cfg.MAX_DEBUG:
                     row = batch_tokens[i]
@@ -342,7 +355,7 @@ def main():
                     dbg = "".join(parts)
                     if len(dbg) > 1200:
                         dbg = dbg[:600] + " ... " + dbg[-600:]
-                    header = f"(id={ex_id}, regime={regime}, p={p_val}, split_tok={sp}, kept={len(keep)})"
+                    header = f"(id={ex_id}, regime={regime}, p={p_val}, ex_split={ex_split}, split_tok={sp}, kept={len(keep)})"
                     debug_lines.append(header + "\n" + dbg + "\n")
 
             # ---- end-of-batch cleanup to avoid VRAM growth ----
@@ -400,7 +413,7 @@ def main():
         except Exception:
             pass
 
-    labels_cols = ["example_id", "regime", "p_value", "offset_from_split", "token_index_in_seq"]
+    labels_cols = ["example_id", "regime", "p_value", "offset_from_split", "token_index_in_seq", "split"]
     labels_df = pd.DataFrame(labels, columns=labels_cols)
     labels_csv = out_dir / f"{run_tag}_labels.csv"
     labels_df.to_csv(labels_csv, index=False)
@@ -415,6 +428,8 @@ def main():
         "batch_size": args.batch_size,
         "bucket_size": args.bucket_size,
         "total_selected_tokens": int(labels_df.shape[0]),
+        "train_tokens": int((labels_df["split"] == 'train').sum()),
+        "test_tokens": int((labels_df["split"] == 'test').sum()),
         "token_sample_fraction": float(getattr(cfg, 'TOKEN_SAMPLE_FRACTION', 1.0) or 1.0),
         "unique_examples": int(labels_df["example_id"].nunique()),
         "counts_by_regime": {r: int((rows["regime"] == r).sum()) for r in REGIMES},
@@ -435,6 +450,10 @@ def main():
     print(f"Saved labels  : {labels_csv}")
     print(f"Saved info    : {info_json}")
     print(f"Saved debug   : {debug_path}")
+    # Train/test token counts
+    n_train = int((labels_df["split"] == 'train').sum())
+    n_test = int((labels_df["split"] == 'test').sum())
+    print(f"Train/Test token counts: train={n_train}  test={n_test}  total={len(labels_df)}")
 
 if __name__ == "__main__":
     main()

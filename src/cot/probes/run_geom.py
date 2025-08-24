@@ -72,12 +72,22 @@ def _read_labels(labels_csv: Path) -> pd.DataFrame:
         df[off_col] = pd.to_numeric(df[off_col], errors='coerce')
         df = df.dropna(subset=[off_col])
         rng = getattr(cfg, 'FILTER_OFFSET_RANGE', None)
-        if isinstance(rng, (tuple, list)) and len(rng) == 2:
+        # Interpret tuple as inclusive range, list as explicit whitelist
+        if isinstance(rng, tuple) and len(rng) == 2:
             lo, hi = rng
             if lo is not None:
                 df = df[df[off_col] >= lo]
             if hi is not None:
                 df = df[df[off_col] <= hi]
+        elif isinstance(rng, list):
+            # whitelist specific offsets (e.g., [-1, 0, 1])
+            try:
+                whitelist = set(int(x) for x in rng)
+                df = df[df[off_col].isin(whitelist)]
+            except Exception:
+                # If casting fails, fall back to comparing stringified values
+                whitelist = set(str(x) for x in rng)
+                df = df[df[off_col].astype(str).isin(whitelist)]
         maxv = getattr(cfg, 'FILTER_OFFSET_MAX', None)
         if maxv is not None:
             df = df[df[off_col] <= maxv]
@@ -301,6 +311,10 @@ def main():
         raise ValueError(f"Not enough unique {cfg.GROUP_COL} for {cfg.N_SPLITS}-fold GroupKFold.")
 
     gkf = GroupKFold(n_splits=cfg.N_SPLITS)
+    # Optional explicit train/test split (collector adds 'split' column)
+    explicit_split = bool(getattr(cfg, 'EXPLICIT_SPLIT', False))
+    train_name = str(getattr(cfg, 'TRAIN_SPLIT_NAME', 'train'))
+    test_name = str(getattr(cfg, 'TEST_SPLIT_NAME', 'test'))
 
     npz = np.load(npz_path)
     layers = _layer_keys(npz)
@@ -330,9 +344,12 @@ def main():
 
     # Offset range portion (prefer FILTER_OFFSET_RANGE if present)
     rng = getattr(cfg, 'FILTER_OFFSET_RANGE', None)
-    if isinstance(rng, (tuple, list)) and len(rng) == 2:
+    if isinstance(rng, tuple) and len(rng) == 2:
         lo, hi = rng
         off_str = f"off_{lo if lo is not None else 'min'}_to_{hi if hi is not None else 'max'}"
+    elif isinstance(rng, list):
+        vals = "+".join(str(x) for x in rng)
+        off_str = f"off_in_{vals if vals else 'none'}"
     else:
         off_str = "off_all"
 
@@ -591,9 +608,11 @@ def main():
     if regimes_to_use is not None:
         filters.append(f"regime in {{{', '.join(map(str, regimes_to_use))}}}")
     rng = getattr(cfg, 'FILTER_OFFSET_RANGE', None)
-    if isinstance(rng, (tuple, list)) and len(rng) == 2:
+    if isinstance(rng, tuple) and len(rng) == 2:
         lo, hi = rng
         filters.append(f"{cfg.OFFSET_COL} in [{lo if lo is not None else '-inf'}, {hi if hi is not None else '+inf'}]")
+    elif isinstance(rng, list):
+        filters.append(f"{cfg.OFFSET_COL} in {{{', '.join(map(str, rng))}}}")
     maxv = getattr(cfg, 'FILTER_OFFSET_MAX', None)
     if maxv is not None:
         filters.append(f"{cfg.OFFSET_COL} <= {maxv}")
