@@ -1,14 +1,18 @@
+# generate_questions.py
+
 import csv
 import json
 import os
 import random
+import math
+
 from pathlib import Path
 from typing import Dict, List, Set, Tuple, Optional
 
 import datagen_config as cfg
 
 from logic_builder import build_forward_logic_instance
-from cot_builder import build_cot_and_annotation 
+from cot_builder import build_cot_and_annotation
 
 
 # --------------------------
@@ -74,6 +78,12 @@ def _sample_disjoint_sets(
         indet.add(p)
     elif regime == "v_output":
         pass
+    elif regime == "vi_single_use":
+        # P is initial and must be used exactly once as an input
+        init.add(p)
+    elif regime == "vii_max_use":
+        # P is initial and should be used as an input in every rule if legal
+        init.add(p)
     else:
         raise ValueError(f"Unknown regime {regime}")
 
@@ -166,19 +176,37 @@ def _attempt_instance_for_regime(
     regime: str,
     p: str = "P",
 ):
+    # Tunables (with cfg fallbacks)
+    vii_max_decl_used = getattr(cfg, "VII_MAX_DECLARED_USED", 3)         # cap declared used in (vii)
+    vii_rule_usage_frac = getattr(cfg, "VII_MIN_RULE_USAGE_FRAC", 0.7)    # P must appear in >= this fraction of rules
+    vii_used_on_path_frac = getattr(cfg, "VII_USED_ON_PATH_FRAC", 0.5)    # fraction of declared 'used' that must be on minimal path
+
     for _ in range(cfg.MAX_TRIES_PER_ITEM):
         n_init = _rand_count(rng, cfg.COUNTS["initial"])
         n_used = _rand_count(rng, cfg.COUNTS["used"])
         n_unused = _rand_count(rng, cfg.COUNTS["unused"])
         n_indet = _rand_count(rng, cfg.COUNTS["indeterminate"])
 
-        # Be robust to shortfalls of variables on this draw
+        # Make (vii) easier to satisfy by limiting declared 'used'
+        if regime == "vii_max_use":
+            n_used = min(n_used, vii_max_decl_used)
+
         try:
             init, used, unused, indet, out = _sample_disjoint_sets(
                 rng, all_vars, n_init, n_used, n_unused, n_indet, p, regime
             )
         except ValueError:
             continue
+
+        # Regime-specific builder constraints
+        forbid_inputs = {p} if regime == "ii_inconsequential" else set()
+
+        prefer_input_var = None
+        input_usage_limits = None
+        if regime == "vi_single_use":
+            input_usage_limits = {p: (1, 1)}           # exactly once across all rule inputs
+        elif regime == "vii_max_use":
+            prefer_input_var = p                        # bias toward using P everywhere
 
         # Build instance
         try:
@@ -189,6 +217,9 @@ def _attempt_instance_for_regime(
                 indeterminate_intermediate_vars=indet,
                 output_var=out,
                 seed=rng.getrandbits(31),
+                forbid_as_input=forbid_inputs,
+                prefer_input_var=prefer_input_var,
+                input_usage_limits=input_usage_limits,
             )
         except Exception:
             continue  # resample
@@ -196,34 +227,77 @@ def _attempt_instance_for_regime(
         steps = inst["steps"]
         status = inst["status_timeline"]
 
-        # Regime-specific checks that were already there
+        # Regime-specific checks
         if regime == "i_initial":
             if p not in init:
                 continue
+
         elif regime == "ii_inconsequential":
             if p not in init:
                 continue
-            # Handled by support (P shouldn't be on the minimal path)
+            minimal_support = _compute_minimal_support(inst)
+            if p in minimal_support:
+                continue
+            p_used_anywhere = any(
+                any(var == p for (_s, var) in r.get("inputs", []))
+                for r in inst["rules"]
+            )
+            if p_used_anywhere:
+                continue
+
         elif regime == "iii_derived":
             if p in init:
                 continue
             if _status_known_t(status, p) is None:
                 continue
+
         elif regime == "iv_indeterminate":
             if _status_known_t(status, p) is not None:
                 continue
+            inst["pseudo_p_label"] = bool(rng.getrandbits(1))
+            inst["pseudo_p_anchor_step_index"] = (max(0, len(steps) // 2) if steps else None)
+
         elif regime == "v_output":
             if inst["output_var"] != p:
                 continue
 
-        # -------- New: necessity & uselessness checks --------
+        elif regime == "vi_single_use":
+            # Exactly one usage of P across all rule inputs
+            uses = sum(
+                1 for r in inst["rules"]
+                for (_s, v) in r.get("inputs", [])
+                if v == p
+            )
+            if uses != 1:
+                continue
+
+        elif regime == "vii_max_use":
+            # P should be used in MOST rules (fractional threshold), not all
+            total_rules = len(inst["rules"])
+            uses_rules = sum(
+                1 for r in inst["rules"]
+                if any(v == p for (_s, v) in r.get("inputs", []))
+            )
+            min_uses = max(1, math.ceil(total_rules * float(vii_rule_usage_frac)))
+            if uses_rules < min_uses:
+                continue
+
+        # -------- Minimal-support checks (relaxed for vii) --------
         minimal_support = _compute_minimal_support(inst)
 
-        # Every declared used var must be on the minimal support path
-        if not set(used).issubset(minimal_support):
-            continue
+        if regime != "vii_max_use":
+            # Every declared used var must be on the minimal path
+            if not set(used).issubset(minimal_support):
+                continue
+        else:
+            # Only require that a fraction of declared 'used' end up on the minimal path
+            if len(used) > 0:
+                on_path = sum(1 for u in used if u in minimal_support)
+                need_on_path = max(1, math.ceil(vii_used_on_path_frac * len(used)))
+                if on_path < need_on_path:
+                    continue
 
-        # Every declared unused var must be determinate AND not on the minimal path
+        # -------- Unused must be determinate AND off the minimal path --------
         unused_ok = True
         for u in unused:
             if _status_known_t(status, u) is None:
@@ -235,10 +309,6 @@ def _attempt_instance_for_regime(
         if not unused_ok:
             continue
 
-        # For regime ii_inconsequential specifically, 'P' must NOT be on the path
-        if regime == "ii_inconsequential" and p in minimal_support:
-            continue
-
         # Store declared categories for debugging/inspection
         inst["regime"] = regime
         inst["declared_initial"] = init
@@ -246,10 +316,14 @@ def _attempt_instance_for_regime(
         inst["declared_unused"] = unused
         inst["declared_indeterminate"] = indet
         inst["minimal_support"] = sorted(minimal_support)
+        if regime == "ii_inconsequential":
+            inst["p_forbidden_as_input"] = True
 
         return inst
 
     raise RuntimeError(f"Could not construct an instance for regime {regime} after {cfg.MAX_TRIES_PER_ITEM} tries.")
+
+
 
 
 # --------------------------
@@ -261,19 +335,33 @@ def _fmt_lit(sign: str, var: str) -> str:
 def _fmt_rule(rule: Dict) -> str:
     head = rule.get("head")
     op = rule.get("op")
-    ins = rule.get("inputs", [])
+    ins = list(rule.get("inputs", []))
+
+    def lit(sig_var):
+        s, v = sig_var
+        return f"not {v}" if s == "-" else v
+
     if op == "UNARY":
-        return f"{head} = {_fmt_lit(*ins[0])}."
-    if op == "AND":
-        a, b = ins
-        return f"{head} = ({_fmt_lit(*a)}) AND ({_fmt_lit(*b)})."
-    if op == "OR":
-        a, b = ins
-        return f"{head} = ({_fmt_lit(*a)}) OR ({_fmt_lit(*b)})."  # should not appear now
+        if len(ins) != 1:
+            # degrade gracefully: show whatever we have
+            return f"{head} = {lit(ins[0])}." if ins else f"{head} = ?."
+        return f"{head} = {lit(ins[0])}."
+
+    if op in ("AND", "OR"):
+        # Defensive: ensure we have two inputs for printing
+        if len(ins) < 2:
+            ins = ins + ins[:1]  # duplicate first if only one exists
+        a, b = ins[0], ins[1]
+        joiner = "AND" if op == "AND" else "OR"
+        return f"{head} = ({lit(a)}) {joiner} ({lit(b)})."
+
     if op == "CLAUSE" and head is None:
-        parts = " OR ".join(f"({_fmt_lit(s, v)})" for (s, v) in ins)
+        parts = " OR ".join(f"({lit(sig_var)})" for sig_var in ins)
         return f"{parts} is True."
+
+    # Fallback
     return f"{head} {op} {ins}"
+
 
 def instance_to_nl_question(inst: Dict) -> Tuple[str, str]:
     initials = inst["initial_assignments"]
@@ -314,7 +402,7 @@ def write_csv(path: str, items: List[Dict]) -> None:
         writer.writerow(["id", "regime", "question", "answer", "cot", "p_char_index", "p_value"])
         for idx, inst in enumerate(items):
             q, a = instance_to_nl_question(inst)
-            # build CoT + annotation
+            # build CoT + annotation (always track 'P', including new regimes)
             cot_pack = build_cot_and_annotation(inst, p_var="P")
             writer.writerow([
                 idx, inst.get("regime", ""), q, a,
@@ -351,15 +439,31 @@ def write_debug_txt(path: str, items: List[Dict]) -> None:
             f.write("Observed minimal support path to output:\n")
             f.write(f"  minimal_support:{inst.get('minimal_support', [])}\n")
 
-            # ---- NEW: CoT + annotation with '||' marker only in .txt ----
+            # ---- CoT + annotation ----
             cot_pack = build_cot_and_annotation(inst, p_var="P")
             f.write("\nCOT (gold):\n")
             f.write(cot_pack["cot_marked"] + "\n")
-            if cot_pack["p_char_index"] is not None:
-                f.write(f"(P becomes determinate at char index {cot_pack['p_char_index']}, value={cot_pack['p_value']})\n")
+
+            if inst.get("regime") == "iv_indeterminate" and "pseudo_p_label" in inst:
+                anchor_idx = inst.get("pseudo_p_anchor_step_index", None)
+                if anchor_idx is not None and 0 <= anchor_idx < len(inst["steps"]):
+                    anchor_var = inst["steps"][anchor_idx]["learned"]
+                    f.write(
+                        f"(P is logically indeterminate; assigned pseudo-label {cot_pack['p_value']}. "
+                        f"Split marker anchored on step {anchor_idx} ({anchor_var}). "
+                        f"char_index={cot_pack['p_char_index']})\n"
+                    )
+                else:
+                    f.write(
+                        f"(P is logically indeterminate; assigned pseudo-label {cot_pack['p_value']}. "
+                        f"Split marker anchored near the header. "
+                        f"char_index={cot_pack['p_char_index']})\n"
+                    )
             else:
-                f.write("(P remains indeterminate in this instance)\n")
-            f.write("\n")
+                if cot_pack["p_char_index"] is not None:
+                    f.write(f"(P becomes determinate at char index {cot_pack['p_char_index']}, value={cot_pack['p_value']})\n")
+                else:
+                    f.write("(P remains indeterminate in this instance)\n")
 
 # -------------
 # Script entry

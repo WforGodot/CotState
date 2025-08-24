@@ -2,23 +2,25 @@ import os
 
 # Variables to sample from (must include 'P')
 # Use plenty of symbols so disjoint buckets don't run out.
-PREFERRED_VARS = list("PQRSTUVWXYZABCDEFGHIJKLMNO")
+PREFERRED_VARS = list("PQRSUVWXYZABCD")
 
 # How many items per regime
 QUESTIONS_PER_REGIME = {
-    "i_initial": 0,
-    "ii_inconsequential": 0,
-    "iii_derived": 0,
-    "iv_indeterminate": 0,
-    "v_output": 3000,
+    "i_initial": 100,
+    "ii_inconsequential": 100,
+    "iii_derived": 100,
+    "iv_indeterminate": 100,
+    "v_output": 100,
+    "vi_single_use": 100,
+    "vii_max_use": 100,
 }
 
 # Counts per bucket (inclusive ranges)
 COUNTS = {
-    "initial": (1, 3),
+    "initial": (2, 2),
     "used": (2, 3),
-    "unused": (0, 2),
-    "indeterminate": (0, 2),
+    "unused": (0, 1),
+    "indeterminate": (0, 1),
 }
 
 SEED = 4
@@ -28,4 +30,9 @@ JSONL_FILENAME = "proplogic_dataset.jsonl"   # structured instances
 CSV_FILENAME   = "proplogic_questions.csv"   # natural-language questions
 DEBUG_FILENAME = "proplogic_debug.txt"       # first item per regime
 
-MAX_TRIES_PER_ITEM = 200
+MAX_TRIES_PER_ITEM = 100
+
+VII_MAX_DECLARED_USED = 3
+VII_MIN_RULE_USAGE_FRAC = 0.7
+VII_USED_ON_PATH_FRAC = 0.5
+
