@@ -20,7 +20,7 @@ EMPTY_CACHE_EVERY_N_BATCHES = 8
 # What to collect
 # -----------------------------
 HOOK_POINT = "resid_post"       # e.g., resid_pre|resid_mid|resid_post|mlp_post|attn_out|attn_pattern
-LAYERS = list(range(0, 36, 2))
+LAYERS = [13, 14, 15]
 
 # -----------------------------
 # Sampling / selection controls
@@ -32,7 +32,7 @@ REGIME_SAMPLE_COUNTS = {
     "iv_indeterminate": 0,
     "v_output": 0,
     "vi_single_use": 0,
-    "vii_max_use": 3000,
+    "vii_max_use": 10000,
 }
 
 # For each regime, choose how many tokens to keep before and after the split.
@@ -54,7 +54,7 @@ SEED = 124
 
 # Fraction of candidate tokens to sample uniformly at random (per-token)
 # Set to 1.0 to keep all; None to disable sampling. Example: 0.5
-TOKEN_SAMPLE_FRACTION = 0.07
+TOKEN_SAMPLE_FRACTION = 0.1
 
 # Train/test split across examples (entire CoT assigned to one split)
 TRAIN_FRACTION = 0.7   # remainder goes to test

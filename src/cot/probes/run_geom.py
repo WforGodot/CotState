@@ -17,8 +17,7 @@ except Exception:  # pragma: no cover
 
 import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
-from sklearn.linear_model import RidgeClassifier, LogisticRegression
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, roc_auc_score, average_precision_score, f1_score
 from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import Pipeline
@@ -165,29 +164,7 @@ class SupervisedSubspace:
 def _build_pipeline(d_model: int) -> Pipeline:
     scaler = StandardScaler(with_mean=True, with_std=True)
     clf_name = str(cfg.CLASSIFIER).lower()
-
-    if clf_name in {"ridge", "logreg"}:
-        keep_variance = isinstance(cfg.PCA_VARIANCE, float) and 0 < cfg.PCA_VARIANCE <= 1.0
-        if keep_variance:
-            n_components = cfg.PCA_VARIANCE
-        elif isinstance(cfg.PCA_VARIANCE, int):
-            n_components = min(int(cfg.PCA_VARIANCE), d_model)
-        else:
-            n_components = min(cfg.PCA_MAX_COMPONENTS, d_model)
-        pca = PCA(
-            n_components=n_components,
-            svd_solver="full" if keep_variance else "randomized",
-            random_state=getattr(cfg, 'RANDOM_STATE', 0),
-        )
-        steps = [("scale", scaler), ("pca", pca)]
-        if clf_name == "ridge":
-            clf = RidgeClassifier(alpha=cfg.RIDGE_ALPHA, class_weight="balanced")
-        else:
-            clf = LogisticRegression(max_iter=2000, C=cfg.LOGREG_C, solver="lbfgs", class_weight="balanced", n_jobs=getattr(cfg, 'N_JOBS', None))
-        steps.append(("clf", clf))
-        return Pipeline(steps)
-
-    elif clf_name in {"rank1", "lowrank"}:
+    if clf_name in {"rank1", "lowrank"}:
         if clf_name == "rank1":
             k = 1; method = getattr(cfg, 'LOWRANK_METHOD', 'lda')
         else:
@@ -197,7 +174,7 @@ def _build_pipeline(d_model: int) -> Pipeline:
         return Pipeline([("scale", scaler), ("subspace", sub), ("clf", clf)])
 
     else:
-        raise ValueError("cfg.CLASSIFIER must be one of {'ridge','logreg','rank1','lowrank'}")
+        raise ValueError("cfg.CLASSIFIER must be one of {'rank1','lowrank'}")
 
 # ========================= Metrics & report =========================
 
@@ -279,7 +256,7 @@ def _maybe_save_geometry(run_dir: Path, layer_idx: int, pipe: Pipeline, order_id
 # ========================= Main =========================
 
 def main():
-    ap = argparse.ArgumentParser(description="Train layerwise probes (rank-1/low-rank/PCA) + DoM comparisons")
+    ap = argparse.ArgumentParser(description="Train layerwise probes (rank-1/low-rank) + DoM comparisons")
     ap.add_argument("--n_tokens", type=int, default=None)
     ap.add_argument("--sample_seed", type=int, default=None)
     ap.add_argument("--save_geometry", action="store_true")
@@ -311,10 +288,6 @@ def main():
         raise ValueError(f"Not enough unique {cfg.GROUP_COL} for {cfg.N_SPLITS}-fold GroupKFold.")
 
     gkf = GroupKFold(n_splits=cfg.N_SPLITS)
-    # Optional explicit train/test split (collector adds 'split' column)
-    explicit_split = bool(getattr(cfg, 'EXPLICIT_SPLIT', False))
-    train_name = str(getattr(cfg, 'TRAIN_SPLIT_NAME', 'train'))
-    test_name = str(getattr(cfg, 'TEST_SPLIT_NAME', 'test'))
 
     npz = np.load(npz_path)
     layers = _layer_keys(npz)
@@ -593,12 +566,9 @@ def main():
     header.append(f"NPZ: {npz_path}")
     header.append(f"Labels: {labels_csv}")
     header.append(f"Hook prefix: {cfg.HOOK_POINT_PREFIX}  |  Mode: {cfg.CLASSIFIER}")
-    if str(cfg.CLASSIFIER).lower() in {"ridge","logreg"}:
-        header.append(f"PCA: keep {cfg.PCA_VARIANCE:.3f} variance (cap {cfg.PCA_MAX_COMPONENTS})")
-    else:
-        k = 1 if str(cfg.CLASSIFIER).lower()=="rank1" else int(getattr(cfg,'LOWRANK_K',4))
-        method = getattr(cfg, 'LOWRANK_METHOD', 'pls' if k>1 else 'lda')
-        header.append(f"Subspace: method={method}, k={k}")
+    k = 1 if str(cfg.CLASSIFIER).lower()=="rank1" else int(getattr(cfg,'LOWRANK_K',4))
+    method = getattr(cfg, 'LOWRANK_METHOD', 'pls' if k>1 else 'lda')
+    header.append(f"Subspace: method={method}, k={k}")
     header.append(f"Grouped CV: {cfg.N_SPLITS} folds by '{cfg.GROUP_COL}'  |  N={len(df)} tokens, Examples={df[cfg.GROUP_COL].nunique()}, PosRate={df['_y'].mean():.3f}")
 
     # Filters

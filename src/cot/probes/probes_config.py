@@ -20,7 +20,7 @@ LABELS_CSV = None
 HOOK_POINT_PREFIX = "acts_resid_post_layer"
 
 # Optionally restrict which layers to train/evaluate (list of ints) or None for all
-LAYERS_TO_TRAIN: list[int] | None = None
+LAYERS_TO_TRAIN: list[int] | None = [14]
 
 # ========== Output ==========
 # Probe reports and scores are written under this directory
@@ -45,25 +45,19 @@ FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
 FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
 # Either an inclusive range tuple (lo, hi) with None for open bounds,
 # or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
-FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = None
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (0,1)
 
 # Optional random subsample of tokens after filtering; None to use all
-N_TOKENS: int | None = 10000
+N_TOKENS: int | None = None
 
 # ========== Model / probe ==========
-# One of: 'ridge', 'logreg', 'rank1', 'lowrank'
+# One of: 'rank1' (k=1) or 'lowrank' (k>1)
 CLASSIFIER = "rank1"
 
-# Ridge/logreg options
-RIDGE_ALPHA = 1.0
+# Logistic regression C for the classifier trained on the learned subspace projections
 LOGREG_C = 1.0
 
-# PCA options for ridge/logreg
-# PCA_VARIANCE may be a float in (0,1] (keep that fraction of variance) or an int (fixed components)
-PCA_VARIANCE = 256
-PCA_MAX_COMPONENTS = 512
-
-# Low-rank subspace options (used when CLASSIFIER in {'rank1','lowrank'})
+# Low-rank subspace options
 LOWRANK_K = 4             # number of components when lowrank; rank1 forces k=1
 LOWRANK_METHOD = "lda"     # 'lda' (binary, rank1 only) or 'pls' (k>=1)
 
@@ -77,10 +71,7 @@ RANDOM_STATE = 0          # RNG seed for reproducibility
 COMPARE_MODE = "dom"
 COMPARE_REG_EPS = 1e-3    # Tikhonov epsilon for whitening (Σ + eps I)^-1
 
-# Explicit train/test split support (from collect_activations labels 'split' column)
-EXPLICIT_SPLIT = True
-TRAIN_SPLIT_NAME = 'train'
-TEST_SPLIT_NAME = 'test'
+# Explicit train/test split options are handled in fixed_test_config for test-only evaluation.
 
 # ========== Report formatting ==========
 COL_WIDTHS = dict(layer=6, n=9, comps=7, acc=10, auroc=10, ap=10, f1=10)
