@@ -31,10 +31,11 @@ except Exception:  # pragma: no cover
         return x
 
 
-REGIMES = ["i_initial", "ii_inconsequential", "iii_derived", "iv_indeterminate", "v_output"]
+REGIMES = ["i_initial", "ii_inconsequential", "iii_derived", "iv_indeterminate", "v_output", "vi_single_use", "vii_max_use"]
 
 
 def _project_root() -> Path:
+    # Points to repository 'src' directory
     return Path(__file__).resolve().parents[2]
 
 
@@ -42,11 +43,27 @@ def _resolve_paths() -> Tuple[Path, Path, Path]:
     root = _project_root()
     datagen_csv = (root / cfg.DATAGEN_CSV_REL).resolve()
     out_dir = (root / cfg.OUT_DIR_REL).resolve()
-    # Vector path may be relative to this file
-    vec_path = Path(cfg.VECTOR_PATH)
-    if not vec_path.is_absolute():
-        vec_path = (Path(__file__).parent / vec_path).resolve()
-    return datagen_csv, out_dir, vec_path
+    vec_dir_rel = Path(getattr(cfg, 'VECTORS_DIR_REL', ''))
+    vectors_dir = (root / vec_dir_rel).resolve()
+    return datagen_csv, out_dir, vectors_dir
+
+
+def _normalize_hook_point(hp_raw: str) -> str:
+    """
+    Normalize cfg.HOOK_POINT to a canonical TransformerLens hook suffix.
+
+    Supported shorthands:
+      - 'resid_post' (default), 'post', 'residpost'
+      - 'resid_pre', 'pre', 'residpre'  <-- NEW
+    Any other value is passed through verbatim to allow advanced users to
+    target other points (e.g., 'mlp_out'), assuming those names exist.
+    """
+    hp = (hp_raw or "").strip().lower()
+    if hp in {"resid_post", "post", "residpost"}:
+        return "resid_post"
+    if hp in {"resid_pre", "pre", "residpre"}:
+        return "resid_pre"
+    return hp  # pass-through for expert usage
 
 
 def _load_vector(vec_path: Path, d_model: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
@@ -56,7 +73,6 @@ def _load_vector(vec_path: Path, d_model: int, device: torch.device, dtype: torc
     if int(v.shape[0]) != int(d_model):
         raise ValueError(f"Vector dim {v.shape[0]} != model d_model {d_model}")
     vt = torch.as_tensor(v, dtype=dtype, device=device)
-    # Normalize to unit length (avoid zero divide)
     n = vt.norm().clamp_min(1e-12)
     return vt / n
 
@@ -92,37 +108,12 @@ def _select_rows(df: pd.DataFrame) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def _invert_along_v(x: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-    # Reflect x across the hyperplane orthogonal to v: x' = x - 2 * proj_v(x)
-    # x: [..., d], v: [d]
-    # proj scalar: [..., 1]
-    proj = x @ v
-    return x - 2.0 * proj.unsqueeze(-1) * v
-
-
-def _hook_inverter(v: torch.Tensor, start_idx: int, end_idx: int):
-    # start_idx inclusive, end_idx exclusive
-    def fn(resid: torch.Tensor, hook):
-        # resid: [batch, pos, d_model]
-        if resid.ndim != 3:
-            return resid
-        b, L, d = resid.shape
-        a = max(0, min(L, start_idx))
-        bnd = max(a, min(L, end_idx))
-        if bnd <= a:
-            return resid
-        segment = resid[:, a:bnd, :]
-        resid[:, a:bnd, :] = _invert_along_v(segment, v)
-        return resid
-    return fn
-
-
 def main():
-    ap = argparse.ArgumentParser(description="Ablate a learned direction on prior tokens and measure logit shifts")
+    ap = argparse.ArgumentParser(description="Ablate learned directions on prior tokens at multiple layers and measure logit shifts")
     ap.add_argument("--n_samples", type=int, default=None)
     args = ap.parse_args()
 
-    datagen_csv, out_dir, vec_path = _resolve_paths()
+    datagen_csv, out_dir, vectors_dir = _resolve_paths()
     ensure_dir(out_dir)
 
     if not datagen_csv.exists():
@@ -156,30 +147,51 @@ def main():
     false_strings = getattr(cfg, 'FALSE_STRINGS', None) or [getattr(cfg, 'FALSE_STR', ' False')]
     true_ids, true_multi, true_map = _get_token_ids(model, true_strings)
     false_ids, false_multi, false_map = _get_token_ids(model, false_strings)
-
     if true_multi or false_multi:
         raise ValueError(
-            "The strings ' true'/' false' are multi-token for this tokenizer. "
+            "The strings ' True'/' False' are multi-token for this tokenizer. "
             "Pick single-token forms that match your CoT text, or implement multi-token scoring."
         )
 
-    # Direction vector
-    d_model = int(model.cfg.d_model)
-    v = _load_vector(vec_path, d_model=d_model, device=model.cfg.device, dtype=model.cfg.dtype)
+    # Layers & vectors: load a vector per selected layer
+    if not vectors_dir.exists() or not vectors_dir.is_dir():
+        raise FileNotFoundError(f"Vector directory not found: {vectors_dir}")
+    layers: List[int] = list(getattr(cfg, 'LAYERS', None) or [getattr(cfg, 'LAYER', 0)])
+    layers = [int(x) for x in layers]
+    if len(layers) == 0:
+        raise ValueError("No layers selected; set LAYERS (list) or LAYER (int) in config.")
 
-    # Hook name
-    layer = int(cfg.LAYER)
-    hook_name = f"blocks.{layer}.hook_{cfg.HOOK_POINT}"
+    d_model = int(model.cfg.d_model)
+    vec_map: Dict[int, torch.Tensor] = {}
+    missing_layers: List[int] = []
+    for L in layers:
+        f = vectors_dir / f"L{L}_top1.npy"
+        if not f.exists():
+            missing_layers.append(L)
+            continue
+        vec_map[L] = _load_vector(f, d_model=d_model, device=model.cfg.device, dtype=model.cfg.dtype)
+    if missing_layers:
+        print(f"[WARN] Missing vectors for layers: {missing_layers} — they will be skipped.")
+        layers = [L for L in layers if L in vec_map]
+    if len(layers) == 0:
+        raise FileNotFoundError("No vectors found for any selected layers.")
+
+    # Hook point (supports 'resid_post' and NEW 'resid_pre')
+    hook_point_norm = _normalize_hook_point(str(getattr(cfg, "HOOK_POINT", "resid_post")))
 
     # Build run name
     def _sanitize(s: str) -> str:
         return re.sub(r"[^A-Za-z0-9._+-]", "-", s)
-
-    vec_stem = _sanitize(vec_path.stem)
     regs_str = "all" if cfg.REGIMES_TO_USE is None else "+".join(_sanitize(r) for r in cfg.REGIMES_TO_USE)
-    base_name = f"L{layer}_{cfg.HOOK_POINT}__vec_{vec_stem}__regs_{regs_str}__prior{int(cfg.PRIOR_TOKENS)}__{_sanitize(cfg.MODEL_NAME)}"
+    mode = str(getattr(cfg, 'ABLATED_MODE', 'reflect')).lower()
+    gamma = float(getattr(cfg, 'PUSH_GAMMA', 1.0))
+    mode_str = f"mode_{mode}" + (f"_g{gamma:.2f}" if mode == 'push' else "")
+    layers_str = "+".join([f"L{L}" for L in layers])
+    vec_stem = _sanitize(vectors_dir.name)
+    base_name = f"{layers_str}_{hook_point_norm}__vecset_{vec_stem}__regs_{regs_str}__prior{int(cfg.PRIOR_TOKENS)}__{mode_str}__{_sanitize(cfg.MODEL_NAME)}"
     run_name = base_name
     k = 1
+    out_dir = out_dir  # rename for clarity
     while (out_dir / run_name).exists():
         k += 1
         run_name = f"{base_name}__{k}"
@@ -196,7 +208,11 @@ def main():
             p_idx = int(r["p_char_index"])  # char index into CoT
         except Exception:
             continue
-        question = str(r["question"]) ; cot = str(r["cot"]) ; regime = str(r["regime"]) ; label = str(r["p_value"]) ; ex_id = int(r["id"]) if pd.notna(r["id"]) else -1
+        question = str(r["question"])
+        cot = str(r["cot"])
+        regime = str(r["regime"])
+        label = str(r["p_value"])
+        ex_id = int(r["id"]) if pd.notna(r["id"]) else -1
         try:
             tok_full, split_idx, _, _, _ = tokenize_with_split(model, question, cot, p_idx)
         except Exception:
@@ -217,7 +233,7 @@ def main():
         ))
 
     if len(pretokenized) == 0:
-        print("No usable examples after tokenization/split. Exiting.")
+        print("[WARN] No usable examples after tokenization/split.")
         return
 
     # Bucket by length
@@ -232,6 +248,11 @@ def main():
     bs = max(1, int(getattr(cfg, 'BATCH_SIZE', 32)))
     empty_every = int(getattr(cfg, 'EMPTY_CACHE_EVERY_N_BATCHES', 0) or 0)
     global_batch_idx = 0
+
+    # Hook point names for all selected layers (supports resid_pre/resid_post)
+    hook_names = {L: f"blocks.{L}.hook_{hook_point_norm}" for L in layers}
+    abl_mode = mode
+    gamma = float(getattr(cfg, 'PUSH_GAMMA', 1.0))
 
     for key in tqdm(sorted(buckets.keys()), desc="Buckets", leave=True):
         group = buckets[key]
@@ -249,41 +270,61 @@ def main():
             # Duplicate batch: first half baseline (no change), second half ablated
             tokens2 = torch.cat([tokens, tokens], dim=0)
 
-            # Build mask [2B, max_L, 1] where True marks positions to reflect
+            # Build mask [2B, max_L, 1] where True marks positions to modify
             pos = torch.arange(max_L, device=tokens2.device).unsqueeze(0).expand(B, -1)
             valid = pos < lens.unsqueeze(1).to(tokens2.device)
             mask_half = (pos >= starts.unsqueeze(1).to(tokens2.device)) & valid
             mask = torch.cat([torch.zeros_like(mask_half), mask_half], dim=0).unsqueeze(-1)
 
-            # Hook: reflect along v on masked positions only, and capture pre-ablation projections
-            v_vec = v  # [d]
-            # Containers to capture per-example pre-ablation metrics at the hook layer
-            capture = {"mean_proj": None, "mean_abs_proj": None, "mean_norm": None, "mean_abs_cos": None}
-            def hook_fn(resid, hook):
-                # resid: [2B, max_L, d]
-                # Capture metrics on the half that will be ablated (second half) BEFORE modification
-                resid_abl = resid[B:2*B, :, :]
-                proj_abl = resid_abl @ v_vec  # [B, max_L]
-                norms_abl = resid_abl.norm(dim=-1)  # [B, max_L]
-                m = mask_half  # [B, max_L]
-                m_f = m.float()
-                counts = m_f.sum(dim=1).clamp_min(1.0)  # [B]
-                mean_proj = (proj_abl * m_f).sum(dim=1) / counts
-                mean_abs_proj = (proj_abl.abs() * m_f).sum(dim=1) / counts
-                mean_norm = (norms_abl * m_f).sum(dim=1) / counts
-                mean_abs_cos = ((proj_abl.abs() / norms_abl.clamp_min(1e-12)) * m_f).sum(dim=1) / counts
-                capture["mean_proj"] = mean_proj.detach().to("cpu")
-                capture["mean_abs_proj"] = mean_abs_proj.detach().to("cpu")
-                capture["mean_norm"] = mean_norm.detach().to("cpu")
-                capture["mean_abs_cos"] = mean_abs_cos.detach().to("cpu")
+            # Capture dicts per layer
+            capture_layer: Dict[int, Dict[str, torch.Tensor]] = {L: {} for L in layers}
 
-                # Apply reflection on both halves according to mask
-                proj = resid @ v_vec  # [2B, max_L]
-                refl = resid - 2.0 * proj.unsqueeze(-1) * v_vec
-                return torch.where(mask, refl, resid)
+            # Build a hook for each selected layer
+            fwd_hooks = []
+            for L in layers:
+                v_vec = vec_map[L]  # [d]
+
+                def make_hook(vv: torch.Tensor, Lcur: int):
+                    def hook_fn(resid, hook):
+                        # resid: [2B, max_L, d] for both resid_pre and resid_post
+                        resid_abl = resid[B:2*B, :, :]
+                        proj_abl = resid_abl @ vv                   # [B, max_L]
+                        norms_abl = resid_abl.norm(dim=-1)          # [B, max_L]
+                        m = mask_half                                # [B, max_L]
+                        m_f = m.float()
+                        counts = m_f.sum(dim=1).clamp_min(1.0)       # [B]
+                        mean_proj = (proj_abl * m_f).sum(dim=1) / counts
+                        mean_abs_proj = (proj_abl.abs() * m_f).sum(dim=1) / counts
+                        mean_norm = (norms_abl * m_f).sum(dim=1) / counts
+                        abs_cos = (proj_abl.abs() / norms_abl.clamp_min(1e-12))
+                        mean_abs_cos = (abs_cos * m_f).sum(dim=1) / counts
+                        mean_abs_cos2 = ((abs_cos * abs_cos) * m_f).sum(dim=1) / counts
+
+                        # Save per-layer metrics (CPU tensors)
+                        capture_layer[Lcur]["mean_proj"] = mean_proj.detach().to("cpu")
+                        capture_layer[Lcur]["mean_abs_proj"] = mean_abs_proj.detach().to("cpu")
+                        capture_layer[Lcur]["mean_norm"] = mean_norm.detach().to("cpu")
+                        capture_layer[Lcur]["mean_abs_cos"] = mean_abs_cos.detach().to("cpu")
+                        capture_layer[Lcur]["mean_abs_cos2"] = mean_abs_cos2.detach().to("cpu")
+
+                        # Apply selected ablation mode on masked positions
+                        if abl_mode == 'reflect':
+                            proj = resid @ vv
+                            new = resid - 2.0 * proj.unsqueeze(-1) * vv
+                        elif abl_mode == 'project_out':
+                            proj = resid @ vv
+                            new = resid - proj.unsqueeze(-1) * vv
+                        elif abl_mode == 'push':
+                            new = resid + gamma * vv
+                        else:
+                            new = resid
+                        return torch.where(mask, new, resid)
+                    return hook_fn
+
+                fwd_hooks.append((hook_names[L], make_hook(v_vec, L)))
 
             with torch.no_grad():
-                logits2 = model.run_with_hooks(tokens2, fwd_hooks=[(hook_name, hook_fn)])
+                logits2 = model.run_with_hooks(tokens2, fwd_hooks=fwd_hooks)
 
             # Gather per-example logits at last real position
             idx = (lens - 1).to(logits2.device)
@@ -328,11 +369,28 @@ def main():
             )
             flipped = (np.sign(base_margin) != np.sign(abl_margin)).astype(int)
 
-            # Pull captured nudging metrics
-            mean_proj = capture["mean_proj"].numpy() if capture["mean_proj"] is not None else np.zeros(B)
-            mean_abs_proj = capture["mean_abs_proj"].numpy() if capture["mean_abs_proj"] is not None else np.zeros(B)
-            mean_norm = capture["mean_norm"].numpy() if capture["mean_norm"] is not None else np.zeros(B)
-            mean_abs_cos = capture["mean_abs_cos"].numpy() if capture["mean_abs_cos"] is not None else np.zeros(B)
+            # Aggregate per-layer "nudge" metrics across layers (simple mean)
+            if len(layers) > 0:
+                # Stack per-layer metrics to [num_layers, B]
+                def agg(name: str) -> np.ndarray:
+                    stacks = [capture_layer[L][name].numpy() for L in layers if name in capture_layer[L]]
+                    if len(stacks) == 0:
+                        return np.zeros(B, dtype=float)
+                    return np.mean(np.stack(stacks, axis=0), axis=0)
+
+                mean_proj = agg("mean_proj")
+                mean_abs_proj = agg("mean_abs_proj")
+                mean_norm = agg("mean_norm")
+                mean_abs_cos = agg("mean_abs_cos")
+                mean_abs_cos2 = agg("mean_abs_cos2")
+                # Variance of |cos| via E[X^2] - (E[X])^2, clipped to 0
+                var_abs_cos = np.maximum(0.0, (mean_abs_cos2 - (mean_abs_cos ** 2)))
+            else:
+                mean_proj = np.zeros(B)
+                mean_abs_proj = np.zeros(B)
+                mean_norm = np.zeros(B)
+                mean_abs_cos = np.zeros(B)
+                var_abs_cos = np.zeros(B)
 
             for j, ex in enumerate(chunk):
                 rows_out.append(dict(
@@ -354,23 +412,24 @@ def main():
                     base_p_false=float(base_p_false[j]),
                     abl_p_true=float(abl_p_true[j]),
                     abl_p_false=float(abl_p_false[j]),
-                    # "Nudge" metrics at the modified layer (pre-ablation)
+                    # Aggregated nudge metrics across layers (pre-ablation at each layer)
                     mean_hdotv=float(mean_proj[j]),
                     mean_abs_hdotv=float(mean_abs_proj[j]),
                     mean_h_norm=float(mean_norm[j]),
-                    mean_abs_cos=float(mean_abs_cos[j]),  # |cos(theta)| = |h·v| / ||h||
-                    implied_delta_along_v=float(2.0 * mean_proj[j]),        # signed change in v-coordinate
-                    implied_delta_along_v_mag=float(2.0 * mean_abs_proj[j]), # magnitude of change in v-coordinate
-                    implied_frac_change_along_v=float(2.0 * mean_abs_cos[j]),# unitless fraction in [0, 2]
+                    mean_abs_cos=float(mean_abs_cos[j]),
+                    var_abs_cos=float(var_abs_cos[j]),
+                    implied_delta_along_v=float(2.0 * mean_proj[j]),         # avg across layers
+                    implied_delta_along_v_mag=float(2.0 * mean_abs_proj[j]), # avg across layers
+                    implied_frac_change_along_v=float(2.0 * mean_abs_cos[j]),
                     flipped=int(flipped[j]),
                 ))
 
             global_batch_idx += 1
-            if (model.cfg.device.startswith("cuda") and empty_every > 0 and (global_batch_idx % empty_every == 0)):
+            if (str(model.cfg.device).startswith("cuda") and empty_every > 0 and (global_batch_idx % empty_every == 0)):
                 torch.cuda.empty_cache()
 
     if not rows_out:
-        print("No results to report.")
+        print("[WARN] No results to report.")
         return
 
     df_out = pd.DataFrame(rows_out)
@@ -390,10 +449,11 @@ def main():
             avg_base_p_false=float(d["base_p_false"].mean()) if len(d) and "base_p_false" in d else float('nan'),
             avg_abl_p_true=float(d["abl_p_true"].mean()) if len(d) and "abl_p_true" in d else float('nan'),
             avg_abl_p_false=float(d["abl_p_false"].mean()) if len(d) and "abl_p_false" in d else float('nan'),
-            # Nudge summaries
+            # Nudge summaries (aggregated across layers already)
             avg_mean_abs_hdotv=float(d["mean_abs_hdotv"].mean()) if "mean_abs_hdotv" in d else float('nan'),
             avg_mean_h_norm=float(d["mean_h_norm"].mean()) if "mean_h_norm" in d else float('nan'),
             avg_mean_abs_cos=float(d["mean_abs_cos"].mean()) if "mean_abs_cos" in d else float('nan'),
+            avg_var_abs_cos=float(d["var_abs_cos"].mean()) if "var_abs_cos" in d else float('nan'),
             avg_implied_frac_change=float(d["implied_frac_change_along_v"].mean()) if "implied_frac_change_along_v" in d else float('nan'),
         )
 
@@ -405,10 +465,12 @@ def main():
     lines: List[str] = []
     lines.append(f"Ablation run: {run_name}")
     lines.append(f"Timestamp: {datetime.now().strftime('%Y%m%d_%H%M%S')}")
-    lines.append(f"Model: {cfg.MODEL_NAME} | Hook: {hook_name}")
-    lines.append(f"Vector: {vec_path}")
+    layers_disp = ", ".join([f"{L}" for L in layers])
+    lines.append(f"Model: {cfg.MODEL_NAME} | Hooks: " + ", ".join([f"blocks.{L}.hook_{hook_point_norm}" for L in layers]))
+    lines.append(f"Vectors dir: {vectors_dir} (loaded layers: [{layers_disp}])")
     lines.append(f"Dataset: {datagen_csv}")
     lines.append(f"Regimes: {', '.join(cfg.REGIMES_TO_USE)} | Prior tokens: {cfg.PRIOR_TOKENS}")
+    lines.append(f"Mode: {mode}" + (f" (gamma={gamma})" if mode == 'push' else ""))
     lines.append(f"Samples: {len(df_out)} (requested={cfg.N_SAMPLES})")
     lines.append("")
     # Tokenization notes (IDs for each provided variant)
@@ -428,7 +490,7 @@ def main():
             f"  ablated p(T/F): {s['avg_abl_p_true']:.4f} / {s['avg_abl_p_false']:.4f}",
             f"  base margin (T-F): {s['avg_base_margin']:.4f}",
             f"  Δmargin (T-F): {s['avg_delta_margin']:.4f} | flipped: {s['frac_flipped']:.3f}",
-            f"  nudge |cos|: {s['avg_mean_abs_cos']:.4f} | frac change 2|cos|: {s['avg_implied_frac_change']:.4f}",
+            f"  nudge |cos|: {s['avg_mean_abs_cos']:.4f} | var(nudge |cos|): {s['avg_var_abs_cos']:.4f} | frac change 2|cos|: {s['avg_implied_frac_change']:.4f}",
         ]
 
     lines.extend(_fmt_summ("Overall", all_sum))

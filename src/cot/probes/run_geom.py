@@ -6,6 +6,7 @@ from datetime import datetime
 import re
 from typing import Dict, List, Tuple, Optional
 import json
+import hashlib
 
 try:
     from tqdm.auto import tqdm  # type: ignore
@@ -26,6 +27,15 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.cross_decomposition import PLSRegression
 
 import probes_config as cfg
+
+# Optional torch for GPU-accelerated logistic regression on projections
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    _HAS_TORCH = True
+except Exception:
+    _HAS_TORCH = False
 
 # ========================= I/O helpers =========================
 
@@ -159,6 +169,61 @@ class SupervisedSubspace:
         Q, _ = np.linalg.qr(W)
         return Q[:, : self.k]
 
+
+# ========================= GPU helpers (optional) =========================
+
+def _select_device() -> str:
+    want = str(getattr(cfg, 'DEVICE', 'cpu')).lower()
+    if want == 'auto':
+        return 'cuda' if _HAS_TORCH and torch.cuda.is_available() else 'cpu'  # type: ignore[name-defined]
+    if want == 'cuda' and (not _HAS_TORCH or not torch.cuda.is_available()):  # type: ignore[attr-defined]
+        return 'cpu'
+    return 'cpu' if want not in {'cpu','cuda'} else want
+
+
+def _fit_logreg_torch(Z_tr: np.ndarray, y_tr: np.ndarray, Z_te: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    if not _HAS_TORCH:
+        raise RuntimeError("PyTorch not available for GPU path")
+    device = _select_device()
+    if device != 'cuda':
+        raise RuntimeError("CUDA not selected/available for GPU path")
+
+    Xtr = torch.from_numpy(Z_tr).to(device)
+    ytr = torch.from_numpy(y_tr.astype(np.float32)).to(device)
+    Xte = torch.from_numpy(Z_te).to(device)
+
+    n_features = Xtr.shape[1]
+    model = nn.Linear(n_features, 1, bias=True).to(device)
+
+    # Balanced class weighting similar to sklearn class_weight='balanced'
+    pos = float((y_tr == 1).sum()); neg = float((y_tr == 0).sum())
+    pos_weight = torch.tensor([neg / max(pos, 1.0)], device=device, dtype=torch.float32)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+    # Weight decay ~ 1/C (approximate)
+    C = float(getattr(cfg, 'LOGREG_C', 1.0))
+    wd_cfg = getattr(cfg, 'GPU_LR_WEIGHT_DECAY', None)
+    weight_decay = float(wd_cfg) if wd_cfg is not None else (1.0 / max(C, 1e-8))
+    lr = float(getattr(cfg, 'GPU_LR_LR', 0.1))
+    epochs = int(getattr(cfg, 'GPU_LR_EPOCHS', 300))
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    model.train()
+    for _ in range(epochs):
+        optimizer.zero_grad(set_to_none=True)
+        logits = model(Xtr).squeeze(-1)
+        loss = criterion(logits, ytr)
+        loss.backward()
+        optimizer.step()
+
+    model.eval()
+    with torch.no_grad():
+        logits_te = model(Xte).squeeze(-1)
+        probs_te = torch.sigmoid(logits_te)
+        y_hat = (probs_te >= 0.5).to(torch.int32).cpu().numpy()
+        scores = logits_te.detach().float().cpu().numpy()
+    return y_hat, scores
+
 # ========================= Pipelines =========================
 
 def _build_pipeline(d_model: int) -> Pipeline:
@@ -205,7 +270,7 @@ def _format_table_row(layer: int, n: int, ncomp: int, m: Dict[str, float]) -> st
     )
 
 
-def _write_report(report_path: Path, header: List[str], table_lines: List[str], per_regime: List[str], compare_lines: List[str], n_splits: int):
+def _write_report(report_path: Path, header: List[str], table_lines: List[str], per_regime: List[str], nudge_lines: List[str], compare_lines: List[str], n_splits: int):
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("w", encoding="utf-8") as f:
         for line in header: f.write(line.rstrip() + "\n")
@@ -214,6 +279,9 @@ def _write_report(report_path: Path, header: List[str], table_lines: List[str], 
         if per_regime:
             f.write("Per-regime breakdown for the best layer(s):\n")
             for line in per_regime: f.write(line.rstrip() + "\n")
+        if nudge_lines:
+            f.write("\nAverage nudge |cos| vs learned dir (across folds):\n")
+            for line in nudge_lines: f.write(line.rstrip() + "\n")
         if compare_lines:
             f.write("\nDirection comparison vs DoM (averaged across folds):\n")
             for line in compare_lines: f.write(line.rstrip() + "\n")
@@ -283,11 +351,22 @@ def main():
     row_idx = df.index.to_numpy()
     y = df["_y"].to_numpy()
     groups = df[cfg.GROUP_COL].to_numpy()
-
-    if df[cfg.GROUP_COL].nunique() < cfg.N_SPLITS:
-        raise ValueError(f"Not enough unique {cfg.GROUP_COL} for {cfg.N_SPLITS}-fold GroupKFold.")
-
-    gkf = GroupKFold(n_splits=cfg.N_SPLITS)
+    n_splits = int(getattr(cfg, 'N_SPLITS', 2))
+    # Precompute splits once
+    if n_splits and n_splits > 0:
+        if df[cfg.GROUP_COL].nunique() < n_splits:
+            raise ValueError(f"Not enough unique {cfg.GROUP_COL} for {n_splits}-fold GroupKFold.")
+        gkf = GroupKFold(n_splits=n_splits)
+        base_splits = list(gkf.split(np.zeros(len(df)), y, groups))
+    else:
+        if 'split' not in df.columns:
+            raise ValueError("N_SPLITS=0 requires a 'split' column with 'train'/'test'.")
+        is_tr = (df['split'].astype(str) == 'train').to_numpy()
+        is_te = (df['split'].astype(str) == 'test').to_numpy()
+        if not is_tr.any() or not is_te.any():
+            raise ValueError("N_SPLITS=0: train or test split is empty after filtering.")
+        tr_idx = np.where(is_tr)[0]; te_idx = np.where(is_te)[0]
+        base_splits = [(tr_idx, te_idx)]
 
     npz = np.load(npz_path)
     layers = _layer_keys(npz)
@@ -321,8 +400,18 @@ def main():
         lo, hi = rng
         off_str = f"off_{lo if lo is not None else 'min'}_to_{hi if hi is not None else 'max'}"
     elif isinstance(rng, list):
-        vals = "+".join(str(x) for x in rng)
-        off_str = f"off_in_{vals if vals else 'none'}"
+        vals_list = list(rng)
+        vals_joined = "+".join(str(x) for x in vals_list)
+        if len(vals_joined) <= 48:
+            off_str = f"off_in_{vals_joined if vals_joined else 'none'}"
+        else:
+            # Compact representation for long explicit lists
+            digest = hashlib.sha1(",".join(str(x) for x in vals_list).encode("utf-8")).hexdigest()[:8]
+            try:
+                vmin, vmax = min(vals_list), max(vals_list)
+            except Exception:
+                vmin, vmax = 'min', 'max'
+            off_str = f"off_in_{vmin}..{vmax}_n{len(vals_list)}_{digest}"
     else:
         off_str = "off_all"
 
@@ -344,12 +433,27 @@ def main():
             pass
 
     base_name = f"{layers_str}__{off_str}__{regs_str}__{model_str}"
+    # Enforce a max length on run directory name to avoid OS limits
+    try:
+        max_len = int(getattr(cfg, 'MAX_RUN_NAME_LEN', 120))
+    except Exception:
+        max_len = 120
+    if len(base_name) > max_len:
+        digest = hashlib.sha1(base_name.encode('utf-8')).hexdigest()[:10]
+        keep = max(20, max_len - 12)  # keep a reasonable prefix
+        base_name = base_name[:keep] + f"__{digest}"
     run_name = base_name
     # Disambiguate if exists
     k_suffix = 1
     while (out_dir / run_name).exists():
         k_suffix += 1
-        run_name = f"{base_name}__{k_suffix}"
+        candidate = f"{base_name}__{k_suffix}"
+        if len(candidate) > max_len:
+            # Trim to fit max_len while keeping suffix
+            suffix = f"__{k_suffix}"
+            run_name = base_name[: max_len - len(suffix)] + suffix
+        else:
+            run_name = candidate
 
     run_dir = out_dir / run_name
     report_txt = run_dir / "report.txt"
@@ -374,6 +478,7 @@ def main():
     all_layer_scores: Dict[int, np.ndarray] = {}
 
     compare_lines: List[str] = []
+    nudge_lines: List[str] = []
     COMPARE_MODE = str(getattr(cfg, 'COMPARE_MODE', 'none')).lower()  # 'none'|'dom'|'whitened_dom'|'both'
     REG_EPS = float(getattr(cfg, 'COMPARE_REG_EPS', 1e-3))
 
@@ -404,9 +509,13 @@ def main():
         auc_topdir_list: List[float] = []
         auc_dom_list: List[float] = []
         auc_wdom_list: List[float] = []
+        # Nudge |cos| accumulators (per fold means)
+        nudge_tr_means: List[float] = []
+        nudge_te_means: List[float] = []
 
-        splits = list(gkf.split(X, y, groups))
-        fold_iter = tqdm(splits, desc=f"L{layer_idx} CV", leave=False) if _HAS_TQDM else splits
+        splits = base_splits
+        fold_iter = tqdm(splits, desc=f"L{layer_idx} CV" if (n_splits and n_splits>0) else f"L{layer_idx} train→test", leave=False) if _HAS_TQDM else splits
+        use_gpu = (_select_device() == 'cuda') if _HAS_TORCH else False
         for train_idx, test_idx in fold_iter:
             X_tr, X_te = X[train_idx], X[test_idx]
             y_tr, y_te = y[train_idx], y[test_idx]
@@ -420,23 +529,41 @@ def main():
                 else:
                     ncomp_for_layer = d_model
 
-            y_hat = pipe.predict(X_te)
-            try:
-                score = pipe.decision_function(X_te)
-            except Exception:
+            # Default: CPU sklearn predictions
+            y_hat = None; score = None
+            if use_gpu and 'subspace' in pipe.named_steps:
                 try:
-                    proba = pipe.predict_proba(X_te); score = proba[:, 1]
+                    # Manually compute projections and run GPU logistic regression
+                    scaler: StandardScaler = pipe.named_steps['scale']  # type: ignore
+                    sub: SupervisedSubspace = pipe.named_steps['subspace']  # type: ignore
+                    W_std = sub.W_std_
+                    if W_std is None:
+                        raise RuntimeError('Subspace not fitted')
+                    Xtr_std = scaler.transform(X_tr)
+                    Xte_std = scaler.transform(X_te)
+                    Z_tr = Xtr_std @ W_std
+                    Z_te = Xte_std @ W_std
+                    y_hat, score = _fit_logreg_torch(Z_tr.astype(np.float32), y_tr, Z_te.astype(np.float32))
+                except Exception as e:
+                    print(f"[WARN] GPU path failed, falling back to CPU sklearn: {e}")
+            if y_hat is None:
+                y_hat = pipe.predict(X_te)
+                try:
+                    score = pipe.decision_function(X_te)
                 except Exception:
-                    score = None
+                    try:
+                        proba = pipe.predict_proba(X_te); score = proba[:, 1]
+                    except Exception:
+                        score = None
             m = _safe_metrics(y_te, y_hat, score)
             fold_metrics.append(m)
             oof_pred[test_idx] = y_hat
             if score is not None:
                 oof_score[test_idx] = score
 
-            # ---- Compare mode ----
+            # ---- Direction selection (top component) and comparisons ----
             steps = pipe.named_steps
-            if 'subspace' in steps and COMPARE_MODE != 'none':
+            if 'subspace' in steps:
                 scaler: StandardScaler = steps['scale']  # type: ignore
                 sub: SupervisedSubspace = steps['subspace']  # type: ignore
                 W_std = sub.W_std_  # (d, k)
@@ -465,39 +592,48 @@ def main():
 
                 best_j = int(np.nanargmax(comp_aurocs)) if np.any(finite_mask) else 0
                 w_top_std = W_std[:, best_j]
-
-                want_dom = COMPARE_MODE in {"dom", "both", "all"}
-                want_wdom = COMPARE_MODE in {"whitened_dom", "both", "all"}
-                w_dom_std, w_wdom_std = _compute_dom_vectors_std(Xtr_std, y_tr, reg_eps=REG_EPS)
-
-                scale = getattr(scaler, 'scale_', None)
-            if scale is None:
-                scale = np.ones(W_std.shape[0], dtype=W_std.dtype)
-            else:
-                scale = np.asarray(scale)
-                inv_scale = 1.0 / (scale + 1e-12)
+                # Compute average nudge |cos| on train/test using original-space unit vector
+                scale_arr = getattr(scaler, 'scale_', None)
+                if scale_arr is not None:
+                    inv_scale = 1.0 / (np.asarray(scale_arr) + 1e-12)
+                else:
+                    inv_scale = np.ones(W_std.shape[0], dtype=W_std.dtype)
                 w_top_orig = w_top_std * inv_scale
-                w_dom_orig = w_dom_std * inv_scale
-                w_wdom_orig = w_wdom_std * inv_scale
+                # unit norm
+                w_top_orig = w_top_orig / (np.linalg.norm(w_top_orig) + 1e-12)
+                tr_norms = np.linalg.norm(X_tr, axis=1) + 1e-12
+                te_norms = np.linalg.norm(X_te, axis=1) + 1e-12
+                tr_cos = np.abs((X_tr @ w_top_orig) / tr_norms)
+                te_cos = np.abs((X_te @ w_top_orig) / te_norms)
+                nudge_tr_means.append(float(np.mean(tr_cos)))
+                nudge_te_means.append(float(np.mean(te_cos)))
 
-                if want_dom:
-                    cos_dom_list.append(_cos(w_top_orig, w_dom_orig))
-                if want_wdom:
-                    cos_wdom_list.append(_cos(w_top_orig, w_wdom_orig))
+                if COMPARE_MODE != 'none':
+                    want_dom = COMPARE_MODE in {"dom", "both", "all"}
+                    want_wdom = COMPARE_MODE in {"whitened_dom", "both", "all"}
+                    w_dom_std, w_wdom_std = _compute_dom_vectors_std(Xtr_std, y_tr, reg_eps=REG_EPS)
 
-                def _auc_safe(y_true, s):
-                    try:
-                        if len(np.unique(y_true)) > 1:
-                            return float(roc_auc_score(y_true, s))
-                        return float('nan')
-                    except Exception:
-                        return float('nan')
+                    w_dom_orig = w_dom_std * inv_scale
+                    w_wdom_orig = w_wdom_std * inv_scale
 
-                auc_topdir_list.append(_auc_safe(y_te, Xte_std @ w_top_std))
-                if want_dom:
-                    auc_dom_list.append(_auc_safe(y_te, Xte_std @ w_dom_std))
-                if want_wdom:
-                    auc_wdom_list.append(_auc_safe(y_te, Xte_std @ w_wdom_std))
+                    if want_dom:
+                        cos_dom_list.append(_cos(w_top_orig, w_dom_orig))
+                    if want_wdom:
+                        cos_wdom_list.append(_cos(w_top_orig, w_wdom_orig))
+
+                    def _auc_safe(y_true, s):
+                        try:
+                            if len(np.unique(y_true)) > 1:
+                                return float(roc_auc_score(y_true, s))
+                            return float('nan')
+                        except Exception:
+                            return float('nan')
+
+                    auc_topdir_list.append(_auc_safe(y_te, Xte_std @ w_top_std))
+                    if want_dom:
+                        auc_dom_list.append(_auc_safe(y_te, Xte_std @ w_dom_std))
+                    if want_wdom:
+                        auc_wdom_list.append(_auc_safe(y_te, Xte_std @ w_wdom_std))
 
         # Aggregate fold metrics
         def _avg(name: str, default=np.nan):
@@ -518,11 +654,15 @@ def main():
         if comp_auc_sums is not None and comp_counts is not None and np.any(comp_counts > 0):
             mean_aurocs = comp_auc_sums / np.maximum(comp_counts, 1)
             order_idx = np.argsort(-np.nan_to_num(mean_aurocs, nan=-1.0))
-        # Save learned vectors (rank1/lowrank) trained on all data as the final direction(s)
+        # Save learned vectors (rank1/lowrank) trained on all data (CV) or train-only (train→test)
         try:
             if str(cfg.CLASSIFIER).lower() in {"rank1", "lowrank"}:
                 pipe_full = _build_pipeline(d_model)
-                pipe_full.fit(X, y)
+                if n_splits and n_splits>0:
+                    pipe_full.fit(X, y)
+                else:
+                    tr0, _te0 = base_splits[0]
+                    pipe_full.fit(X[tr0], y[tr0])
                 steps_full = pipe_full.named_steps
                 if 'subspace' in steps_full:
                     scaler: StandardScaler = steps_full['scale']  # type: ignore
@@ -537,6 +677,12 @@ def main():
                     np.save(vectors_run_dir / f"L{layer_idx}_top{U.shape[1]}.stack.npy", U)
         except Exception as e:
             print(f"[WARN] Failed to save vectors for L{layer_idx}: {e}")
+
+        # Add nudge |cos| summary line for this layer
+        if nudge_tr_means or nudge_te_means:
+            nudge_lines.append(
+                f"L{layer_idx:02d} nudge |cos|  train={np.nanmean(nudge_tr_means):.4f}  test={np.nanmean(nudge_te_means):.4f}"
+            )
 
         if COMPARE_MODE != 'none' and (len(cos_dom_list) or len(cos_wdom_list)):
             parts = [f"L{layer_idx:02d} compare:"]
@@ -565,11 +711,17 @@ def main():
     header.append(f"Timestamp: {datetime.now().strftime('%Y%m%d_%H%M%S')}")
     header.append(f"NPZ: {npz_path}")
     header.append(f"Labels: {labels_csv}")
-    header.append(f"Hook prefix: {cfg.HOOK_POINT_PREFIX}  |  Mode: {cfg.CLASSIFIER}")
+    device_used = _select_device()
+    header.append(f"Hook prefix: {cfg.HOOK_POINT_PREFIX}  |  Mode: {cfg.CLASSIFIER}  |  Device: {device_used}")
     k = 1 if str(cfg.CLASSIFIER).lower()=="rank1" else int(getattr(cfg,'LOWRANK_K',4))
     method = getattr(cfg, 'LOWRANK_METHOD', 'pls' if k>1 else 'lda')
     header.append(f"Subspace: method={method}, k={k}")
-    header.append(f"Grouped CV: {cfg.N_SPLITS} folds by '{cfg.GROUP_COL}'  |  N={len(df)} tokens, Examples={df[cfg.GROUP_COL].nunique()}, PosRate={df['_y'].mean():.3f}")
+    if n_splits and n_splits > 0:
+        header.append(f"Grouped CV: {n_splits} folds by '{cfg.GROUP_COL}'  |  N={len(df)} tokens, Examples={df[cfg.GROUP_COL].nunique()}, PosRate={df['_y'].mean():.3f}")
+    else:
+        n_tr = int((df.get('split','').astype(str) == 'train').sum())
+        n_te = int((df.get('split','').astype(str) == 'test').sum())
+        header.append(f"Train→Test split by 'split' column  |  N={len(df)} tokens (train={n_tr}, test={n_te}), Examples={df[cfg.GROUP_COL].nunique()}, PosRate={df['_y'].mean():.3f}")
 
     # Filters
     filters = []
@@ -621,7 +773,7 @@ def main():
     except Exception as e:
         print(f"[WARN] Could not compute per-regime summary: {e}")
 
-    _write_report(report_txt, header, table_lines, per_regime_lines, compare_lines, cfg.N_SPLITS)
+    _write_report(report_txt, header, table_lines, per_regime_lines, nudge_lines, compare_lines, cfg.N_SPLITS)
     print(f"[DONE] Report: {report_txt}")
     print(f"[DONE] Scores: {scores_csv}")
 

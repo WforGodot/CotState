@@ -20,7 +20,7 @@ LABELS_CSV = None
 HOOK_POINT_PREFIX = "acts_resid_post_layer"
 
 # Optionally restrict which layers to train/evaluate (list of ints) or None for all
-LAYERS_TO_TRAIN: list[int] | None = [14]
+LAYERS_TO_TRAIN: list[int] | None = None
 
 # ========== Output ==========
 # Probe reports and scores are written under this directory
@@ -45,10 +45,10 @@ FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
 FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
 # Either an inclusive range tuple (lo, hi) with None for open bounds,
 # or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
-FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (0,1)
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (0, 50)
 
 # Optional random subsample of tokens after filtering; None to use all
-N_TOKENS: int | None = None
+N_TOKENS: int | None = 12000
 
 # ========== Model / probe ==========
 # One of: 'rank1' (k=1) or 'lowrank' (k>1)
@@ -58,12 +58,12 @@ CLASSIFIER = "rank1"
 LOGREG_C = 1.0
 
 # Low-rank subspace options
-LOWRANK_K = 4             # number of components when lowrank; rank1 forces k=1
+LOWRANK_K = 8             # number of components when lowrank; rank1 forces k=1
 LOWRANK_METHOD = "lda"     # 'lda' (binary, rank1 only) or 'pls' (k>=1)
 
 # ========== Evaluation ==========
-N_SPLITS = 2              # GroupKFold splits (by GROUP_COL)
-N_JOBS = -1               # parallelism for supported estimators
+N_SPLITS = 0              # GroupKFold splits (by GROUP_COL)
+N_JOBS = 8               # parallelism for supported estimators
 RANDOM_STATE = 0          # RNG seed for reproducibility
 
 # Optional comparison vs DoM/whitened DoM directions in run_geom report
@@ -75,3 +75,15 @@ COMPARE_REG_EPS = 1e-3    # Tikhonov epsilon for whitening (Σ + eps I)^-1
 
 # ========== Report formatting ==========
 COL_WIDTHS = dict(layer=6, n=9, comps=7, acc=10, auroc=10, ap=10, f1=10)
+
+# ========== Acceleration ==========
+# DEVICE: 'cpu', 'cuda', or 'auto' (use CUDA if available)
+DEVICE = 'cpu'
+# Torch logistic regression hyperparameters when using GPU ('cuda')
+GPU_LR_EPOCHS = 300
+GPU_LR_LR = 0.1
+GPU_LR_WEIGHT_DECAY = None  # if None, uses 1/LOGREG_C
+
+# ========== Naming ==========
+# Limit for run directory name length to prevent OS path issues
+MAX_RUN_NAME_LEN = 120

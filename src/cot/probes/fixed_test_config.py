@@ -12,16 +12,19 @@ apply simple filters, and format outputs.
 # ========== Paths ==========
 # Activation features NPZ (relative to this file)
 ACTS_NPZ = Path("../outputs/collect/resid_post_qwen3_collect.npz")
+
 # Labels CSV path; if None, inferred from ACTS_NPZ ("*_labels.csv" alongside)
 LABELS_CSV = None
 
 # Saved vectors location base (run subfolders under here)
 VECTORS_DIR = Path("../outputs/vectors")
 
-# Vector file to test (relative to VECTORS_DIR). Example:
-# "L12__off_in_0+2+4+6+8__regs_v_output__Qwen-Qwen3-0.6B/L12_top1.npy"
+# Vector file to test. Set as either:
+# - repo-root-relative path (recommended), e.g.,
+#   "src/cot/outputs/vectors/L15__off_in_-30..49_n70_31533c49__regs_vii_max_use__Qwen-Qwen3-0.6B/L15_top1.npy"
+# - or relative to VECTORS_DIR as a fallback.
 # Set this to choose which fixed direction/subspace to evaluate.
-VECTOR_FILE = "REPLACE_ME.npy"
+VECTOR_FILE = r"src\cot\outputs\vectors\L15__off_-30_to_30__regs_vii_max_use__Qwen-Qwen3-0.6B\L15_top1.npy"
 
 # Output directory for reports
 OUT_DIR = Path("../outputs/probes")
@@ -38,14 +41,14 @@ OFFSET_COL = "offset_from_split"  # token offset relative to split
 
 # ========== Data selection (optional) ==========
 # Restrict which regimes to use (list of names) or None for all
-REGIMES_TO_USE: list[str] | None = ["v_output"]
+REGIMES_TO_USE: list[str] | None = ["vii_max_use"]
 
 # Offset filters (applied to OFFSET_COL)
 FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
 FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
 # Either an inclusive range tuple (lo, hi) with None for open bounds,
 # or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
-FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = [1,3,5,7,9]
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (30,40)
 
 # Explicit train/test split support (collector adds 'split' column)
 TRAIN_SPLIT_NAME = 'train'

@@ -4,7 +4,9 @@ from __future__ import annotations
 Test a fixed direction or subspace (learned elsewhere) on a held-out test set.
 
 Configuration:
-- In fixed_test_config.py, set VECTORS_DIR (base) and VECTOR_FILE (relative .npy path).
+- In fixed_test_config.py, set VECTOR_FILE as either:
+  - a path relative to the repo root (e.g., "src/cot/outputs/vectors/.../L15_top1.npy"), or
+  - a path relative to VECTORS_DIR (fallback).
   The file may contain a 1D array (d,) for a single direction or a 2D array
   (d, k) for a k-dimensional subspace (columns are components).
 - Optionally set COMPONENT_INDEX in fixed_test_config to choose a single column out of a stacked file
@@ -39,6 +41,9 @@ import fixed_test_config as cfg
 
 # Base vectors directory (same convention as compare_vectors/run_geom)
 BASE_VECTORS_DIR = (Path(__file__).resolve().parent / getattr(cfg, 'VECTORS_DIR', Path('../outputs/vectors'))).resolve()
+
+# Repo root (three levels up from this file: probes -> cot -> src -> repo root)
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 # ========================= Helpers =========================
@@ -172,9 +177,20 @@ def _layer_keys(npz: np.lib.npyio.NpzFile) -> dict[int, str]:
 def main():
     vector_file = getattr(cfg, 'VECTOR_FILE', None)
     if vector_file in (None, '', 'REPLACE_ME.npy'):
-        raise SystemExit("Please set VECTOR_FILE in fixed_test_config.py to point to your saved direction file (relative to VECTORS_DIR).")
+        raise SystemExit("Please set VECTOR_FILE in fixed_test_config.py to point to your saved direction file (repo-root-relative or relative to VECTORS_DIR).")
 
-    vec_path = (BASE_VECTORS_DIR / vector_file).resolve()
+    # Resolve VECTOR_FILE as either repo-root-relative or relative to BASE_VECTORS_DIR
+    vf_raw = str(vector_file)
+    vf_norm = vf_raw.replace("\\", "/")
+    vf_path = Path(vf_norm)
+    if vf_path.is_absolute():
+        vec_path = vf_path
+    else:
+        candidate_repo = (REPO_ROOT / vf_path).resolve()
+        if candidate_repo.exists():
+            vec_path = candidate_repo
+        else:
+            vec_path = (BASE_VECTORS_DIR / vf_path).resolve()
     if not vec_path.exists():
         raise FileNotFoundError(f"Vector file not found: {vec_path}")
 
