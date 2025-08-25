@@ -3,7 +3,7 @@ from __future__ import annotations
 # -----------------------------
 # Model & runtime configuration
 # -----------------------------
-MODEL_NAME = "Qwen/Qwen3-0.6B"
+MODEL_NAME = "Qwen/Qwen3-8B"
 TRUST_REMOTE_CODE = True
 
 DEVICE = "cuda"
@@ -20,7 +20,7 @@ EMPTY_CACHE_EVERY_N_BATCHES = 8
 # What to collect
 # -----------------------------
 HOOK_POINT = "resid_post"       # e.g., resid_pre|resid_mid|resid_post|mlp_post|attn_out|attn_pattern
-LAYERS = list(range(0, 28))  # which layers to collect (list of ints)
+LAYERS = list(range(0, 50))  # which layers to collect (list of ints)
 
 # -----------------------------
 # Sampling / selection controls
@@ -41,20 +41,20 @@ REGIME_SAMPLE_COUNTS = {
 #          (1, -1) keeps 1 token before and all tokens after.
 #          (-1, 0) keeps all tokens before and none after.
 TOKENS_AROUND_BY_REGIME = {
-    "i_initial": (-30, 50),
-    "ii_inconsequential": (-30, 50),
-    "iii_derived": (-30, 50),
-    "iv_indeterminate": (-30, 50),
-    "v_output": (-30, 50),
-    "vi_single_use": (-30, 50),
-    "vii_max_use": (-30, 30),
+    "i_initial": (-40, 40),
+    "ii_inconsequential": (-40, 40),
+    "iii_derived": (-40, 40),
+    "iv_indeterminate": (-40, 40),
+    "v_output": (-40, 40),
+    "vi_single_use": (-40, 40),
+    "vii_max_use": (-40, 40),
 }
 
 SEED = 124
 
 # Fraction of candidate tokens to sample uniformly at random (per-token)
 # Set to 1.0 to keep all; None to disable sampling. Example: 0.5
-TOKEN_SAMPLE_FRACTION = 0.15
+TOKEN_SAMPLE_FRACTION = 0.1
 
 # Train/test split across examples (entire CoT assigned to one split)
 TRAIN_FRACTION = 0.7   # remainder goes to test

@@ -119,6 +119,52 @@ def _layer_keys(npz: np.lib.npyio.NpzFile) -> List[Tuple[int, str]]:
         )
     return out
 
+# ========================= Contrast helpers (for multi-contrast Fisher) =========================
+
+def _build_contrast_ids(df_sub: pd.DataFrame) -> np.ndarray:
+    """
+    Returns an int array of length len(df_sub) assigning each row to a contrast bucket.
+    Config:
+      - LOWRANK_LDA_CONTRAST_BY: one of
+          * a column name (e.g., cfg.REGIME_COL or cfg.GROUP_COL),
+          * a list/tuple of column names (joint key),
+          * 'offset_bins' to bin cfg.OFFSET_COL,
+          * None → auto: prefer REGIME_COL, else GROUP_COL, else single bucket.
+      - LOWRANK_LDA_OFFSET_BIN_EDGES: explicit bin edges for offsets (optional)
+      - LOWRANK_LDA_OFFSET_BIN_WIDTH: integer width for equal-width bins (default 5) if no edges
+    """
+    by = getattr(cfg, 'LOWRANK_LDA_CONTRAST_BY', None)
+    if by is None:
+        if hasattr(cfg, 'REGIME_COL') and cfg.REGIME_COL in df_sub.columns:
+            by = cfg.REGIME_COL
+        elif cfg.GROUP_COL in df_sub.columns:
+            by = cfg.GROUP_COL
+        else:
+            return np.zeros(len(df_sub), dtype=int)
+
+    if by == 'offset_bins':
+        off_col = cfg.OFFSET_COL
+        if off_col not in df_sub.columns:
+            return np.zeros(len(df_sub), dtype=int)
+        vals = pd.to_numeric(df_sub[off_col], errors='coerce').fillna(0).to_numpy()
+        edges = getattr(cfg, 'LOWRANK_LDA_OFFSET_BIN_EDGES', None)
+        if edges is not None:
+            bins = np.digitize(vals, np.asarray(edges, dtype=float), right=True)
+            return bins.astype(int)
+        width = int(getattr(cfg, 'LOWRANK_LDA_OFFSET_BIN_WIDTH', 5))
+        return (np.floor(vals / max(width, 1))).astype(int)
+
+    if isinstance(by, (list, tuple)):
+        keys = df_sub[list(by)].astype(str).agg('|'.join, axis=1)
+        return pd.factorize(keys, sort=True)[0].astype(int)
+
+    # Single column name
+    if by in df_sub.columns:
+        return pd.factorize(df_sub[by].astype(str), sort=True)[0].astype(int)
+
+    # Fallback: single bucket
+    return np.zeros(len(df_sub), dtype=int)
+
 # ========================= Supervised subspace =========================
 
 class SupervisedSubspace:
@@ -128,15 +174,92 @@ class SupervisedSubspace:
         self.fitted_ = False
         self.W_std_: Optional[np.ndarray] = None  # (d, k)
         self._model = None
+        self._order: Optional[np.ndarray] = None  # ordering of components used (by train AUROC)
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
+    @staticmethod
+    def _fisher_dir(X: np.ndarray, y: np.ndarray, ridge: float) -> Optional[np.ndarray]:
+        # Binary Fisher direction with ridge-regularized pooled within-class covariance
+        cls = np.unique(y)
+        if cls.size != 2:
+            return None
+        X0 = X[y == cls[0]]; X1 = X[y == cls[1]]
+        if len(X0) < 2 or len(X1) < 2:
+            return None
+        mu0 = X0.mean(0); mu1 = X1.mean(0)
+        X0c = X0 - mu0; X1c = X1 - mu1
+        d = X.shape[1]
+        # pooled within-class covariance
+        Sw = (X0c.T @ X0c + X1c.T @ X1c) / max((len(X) - 2), 1)
+        Sw = Sw + float(ridge) * np.eye(d, dtype=X.dtype)
+        try:
+            w = np.linalg.solve(Sw, (mu1 - mu0))
+        except np.linalg.LinAlgError:
+            return None
+        # normalize to avoid extreme scales (final QR will re-orthonormalize anyway)
+        n = float(np.linalg.norm(w)) + 1e-12
+        return (w / n)
+
+    def fit(self, X: np.ndarray, y: np.ndarray, contrast_ids: Optional[np.ndarray] = None):
         if self.k < 1:
             raise ValueError("k must be >= 1")
+
+        # --- Multi-contrast Fisher when method='lda' and k>1 ---
+        if self.method == "lda" and self.k > 1:
+            if contrast_ids is None:
+                raise ValueError("LOWRANK_METHOD='lda' with k>1 requires contrast_ids (multi-contrast Fisher).")
+
+            min_per_class = int(getattr(cfg, 'LOWRANK_LDA_MIN_SAMPLES_PER_CLASS', 10))
+            ridge = float(getattr(cfg, 'LOWRANK_LDA_RIDGE', 1e-2))
+            Ws: List[np.ndarray] = []
+            scores: List[float] = []
+
+            for gid in np.unique(contrast_ids):
+                mask = (contrast_ids == gid)
+                Xg, yg = X[mask], y[mask]
+                # both classes present and enough samples
+                if np.unique(yg).size != 2: 
+                    continue
+                if (np.sum(yg == 0) < min_per_class) or (np.sum(yg == 1) < min_per_class):
+                    continue
+                w = self._fisher_dir(Xg, yg, ridge)
+                if w is None:
+                    continue
+                Ws.append(w)
+                # rank by within-fold train AUROC for this single direction
+                try:
+                    s = X @ w
+                    auc = roc_auc_score(y, s) if np.unique(y).size == 2 else np.nan
+                except Exception:
+                    auc = np.nan
+                scores.append(float(auc) if np.isfinite(auc) else -np.inf)
+
+            if not Ws:
+                # Fallback to classic rank-1 LDA if contrasts failed
+                lda = LinearDiscriminantAnalysis(solver="svd")
+                lda.fit(X, y)
+                W = np.asarray(lda.scalings_)
+                if W.ndim == 1: W = W[:, None]
+                self.W_std_ = W[:, :1]
+                self._model = lda
+                self.fitted_ = True
+                self._order = np.array([0], dtype=int)
+                return self
+
+            W_all = np.stack(Ws, axis=1)  # (d, m)
+            order = np.argsort(-np.nan_to_num(np.asarray(scores), nan=-np.inf))
+            keep = min(self.k, W_all.shape[1])
+            self.W_std_ = W_all[:, order[:keep]]
+            self._order = order[:keep]
+            self._model = ("multicontrast_lda", {"n_dirs_total": W_all.shape[1]})
+            self.fitted_ = True
+            return self
+
+        # --- Classic binary LDA (k must be 1) ---
         if self.method == "lda":
             if len(np.unique(y)) != 2:
                 raise ValueError("LDA requires binary targets")
             if self.k != 1:
-                raise ValueError("Binary LDA implies k=1")
+                raise ValueError("Binary LDA implies k=1. Use k>1 only with multi-contrast Fisher.")
             lda = LinearDiscriminantAnalysis(solver="svd")
             lda.fit(X, y)
             W = np.asarray(lda.scalings_)
@@ -144,14 +267,17 @@ class SupervisedSubspace:
                 W = W[:, None]
             self.W_std_ = W[:, :1]
             self._model = lda
+
         elif self.method == "pls":
             pls = PLSRegression(n_components=self.k, scale=False)
             y_reg = y.reshape(-1, 1).astype(float)
             pls.fit(X, y_reg)
             self.W_std_ = np.asarray(pls.x_weights_)[:, : self.k]
             self._model = pls
+
         else:
             raise ValueError("method must be 'lda' or 'pls'")
+
         self.fitted_ = True
         return self
 
@@ -168,6 +294,7 @@ class SupervisedSubspace:
             W = W / scaler.scale_.reshape(-1, 1)
         Q, _ = np.linalg.qr(W)
         return Q[:, : self.k]
+
 
 
 # ========================= GPU helpers (optional) =========================
@@ -438,22 +565,30 @@ def main():
         max_len = int(getattr(cfg, 'MAX_RUN_NAME_LEN', 120))
     except Exception:
         max_len = 120
-    if len(base_name) > max_len:
-        digest = hashlib.sha1(base_name.encode('utf-8')).hexdigest()[:10]
-        keep = max(20, max_len - 12)  # keep a reasonable prefix
-        base_name = base_name[:keep] + f"__{digest}"
-    run_name = base_name
-    # Disambiguate if exists
-    k_suffix = 1
-    while (out_dir / run_name).exists():
-        k_suffix += 1
-        candidate = f"{base_name}__{k_suffix}"
-        if len(candidate) > max_len:
-            # Trim to fit max_len while keeping suffix
-            suffix = f"__{k_suffix}"
-            run_name = base_name[: max_len - len(suffix)] + suffix
-        else:
-            run_name = candidate
+
+    # Optional override via config
+    override_name = getattr(cfg, 'OUTPUT_FILE_NAME', None)
+    if override_name is not None and str(override_name).strip() != "":
+        run_name = re.sub(r"[^A-Za-z0-9._+-]", "-", str(override_name).strip())
+        if len(run_name) > max_len:
+            run_name = run_name[:max_len]
+    else:
+        if len(base_name) > max_len:
+            digest = hashlib.sha1(base_name.encode('utf-8')).hexdigest()[:10]
+            keep = max(20, max_len - 12)  # keep a reasonable prefix
+            base_name = base_name[:keep] + f"__{digest}"
+        run_name = base_name
+        # Disambiguate if exists
+        k_suffix = 1
+        while (out_dir / run_name).exists():
+            k_suffix += 1
+            candidate = f"{base_name}__{k_suffix}"
+            if len(candidate) > max_len:
+                # Trim to fit max_len while keeping suffix
+                suffix = f"__{k_suffix}"
+                run_name = base_name[: max_len - len(suffix)] + suffix
+            else:
+                run_name = candidate
 
     run_dir = out_dir / run_name
     report_txt = run_dir / "report.txt"
@@ -519,7 +654,11 @@ def main():
         for train_idx, test_idx in fold_iter:
             X_tr, X_te = X[train_idx], X[test_idx]
             y_tr, y_te = y[train_idx], y[test_idx]
-            pipe.fit(X_tr, y_tr)
+
+            contrast_ids_tr = _build_contrast_ids(df.iloc[train_idx])
+
+            # Pass contrast ids to the subspace step so multi-contrast LDA (k>1) can fit
+            pipe.fit(X_tr, y_tr, **{"subspace__contrast_ids": contrast_ids_tr})
 
             if ncomp_for_layer is None:
                 if 'pca' in pipe.named_steps:
@@ -659,10 +798,13 @@ def main():
             if str(cfg.CLASSIFIER).lower() in {"rank1", "lowrank"}:
                 pipe_full = _build_pipeline(d_model)
                 if n_splits and n_splits>0:
-                    pipe_full.fit(X, y)
+                    contrast_ids_all = _build_contrast_ids(df)
+                    pipe_full.fit(X, y, subspace__contrast_ids=contrast_ids_all)
                 else:
                     tr0, _te0 = base_splits[0]
-                    pipe_full.fit(X[tr0], y[tr0])
+                    contrast_ids_tr0 = _build_contrast_ids(df.iloc[tr0])
+                    pipe_full.fit(X[tr0], y[tr0], subspace__contrast_ids=contrast_ids_tr0)
+
                 steps_full = pipe_full.named_steps
                 if 'subspace' in steps_full:
                     scaler: StandardScaler = steps_full['scale']  # type: ignore
@@ -761,15 +903,49 @@ def main():
                     pos_idx = np.array([idx_to_pos[i] for i in orig_idx if int(i) in idx_to_pos], dtype=int)
                     if pos_idx.size == 0:
                         per_regime_lines.append(f"  - {reg:<18} Acc=nan  AUROC=nan"); continue
-                    acc = accuracy_score(df.iloc[pos_idx]['_y'], y_hat[pos_idx])
+
+                    # Ground-truth and predictions for this regime
+                    y_true_reg = df.iloc[pos_idx]['_y'].to_numpy()
+                    acc_model = accuracy_score(y_true_reg, y_hat[pos_idx])
+
+                    # Use scores to compute threshold-dependent diagnostics
                     try:
-                        y_true_reg = df.iloc[pos_idx]['_y'].to_numpy(); y_score_reg = y_score[pos_idx]
+                        y_score_reg = y_score[pos_idx]
                         mask = np.isfinite(y_score_reg)
-                        if np.unique(y_true_reg).size > 1 and mask.any():
-                            auc = roc_auc_score(y_true_reg[mask], y_score_reg[mask])
-                        else: auc = float('nan')
-                    except Exception: auc = float('nan')
-                    per_regime_lines.append(f"  - {reg:<18} Acc={acc:.3f}  AUROC={auc:.3f}")
+                        # Default threshold: 0.5 for probabilities, 0.0 for decision_function
+                        thr_default = 0.5 if (np.nanmin(y_score_reg) >= 0.0 and np.nanmax(y_score_reg) <= 1.0) else 0.0
+                        if np.any(mask):
+                            # AUROC (threshold-free)
+                            auc = roc_auc_score(y_true_reg[mask], y_score_reg[mask]) if np.unique(y_true_reg).size > 1 else float('nan')
+                            # Accuracy at default threshold computed from scores
+                            y_pred_def = (y_score_reg >= thr_default).astype(int)
+                            acc_default = accuracy_score(y_true_reg[mask], y_pred_def[mask])
+                            # Best-threshold accuracy (optimistic upper bound for understanding)
+                            uniq = np.unique(y_score_reg[mask])
+                            # If too many unique values, subsample thresholds for speed
+                            if uniq.size > 512:
+                                quantiles = np.linspace(0.0, 1.0, 513)
+                                cand_thr = np.quantile(y_score_reg[mask], quantiles)
+                            else:
+                                cand_thr = uniq
+                            best_acc = 0.0
+                            for t in cand_thr:
+                                pred_t = (y_score_reg[mask] >= t).astype(int)
+                                a = accuracy_score(y_true_reg[mask], pred_t)
+                                if a > best_acc:
+                                    best_acc = a
+                            # Balanced accuracy at default threshold (robust to class imbalance)
+                            from sklearn.metrics import balanced_accuracy_score
+                            bacc = balanced_accuracy_score(y_true_reg[mask], (y_score_reg[mask] >= thr_default).astype(int))
+                        else:
+                            auc = float('nan'); acc_default = float('nan'); best_acc = float('nan'); bacc = float('nan')
+                    except Exception:
+                        auc = float('nan'); acc_default = float('nan'); best_acc = float('nan'); bacc = float('nan')
+
+                    prev = float(np.mean(y_true_reg)) if y_true_reg.size else float('nan')
+                    per_regime_lines.append(
+                        f"  - {reg:<18} Acc={acc_model:.3f}  Acc@thr={acc_default:.3f}  Acc@best={best_acc:.3f}  BAcc={bacc:.3f}  Prev={prev:.3f}  AUROC={auc:.3f}"
+                    )
     except Exception as e:
         print(f"[WARN] Could not compute per-regime summary: {e}")
 

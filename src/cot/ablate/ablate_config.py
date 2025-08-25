@@ -17,7 +17,7 @@ OUT_DIR_REL = Path("cot/outputs/ablate")
 # This path is resolved relative to the project 'src' root (see run_ablate).
 # Example (matches src/cot/outputs/vectors structure):
 #   "cot/outputs/vectors/L15__off_-30_to_30__regs_vii_max_use__Qwen-Qwen3-0.6B"
-VECTORS_DIR_REL = "cot/outputs/vectors/all_layers"
+VECTORS_DIR_REL = "cot/outputs/vectors/run1-scan_all_layers"
 
 # ========== Model ==========
 MODEL_NAME = "Qwen/Qwen3-0.6B"
@@ -27,29 +27,48 @@ TRUST_REMOTE_CODE = True
 
 # ========== Batching / performance ==========
 # Process examples in padded batches grouped by similar lengths
-BATCH_SIZE = 16
+BATCH_SIZE = 12
 LENGTH_BUCKET_SIZE = 64
 EMPTY_CACHE_EVERY_N_BATCHES = 0  # set >0 to periodically free CUDA cache
 
 # ========== Hook / layer ==========
 # Hook point name without the "hook_" prefix (e.g., "resid_pre", "resid_post", "mlp_out").
 HOOK_POINT = "resid_post"
-# Layers to modify (0-based). If None, falls back to single LAYER.
-LAYERS: list[int] | None = [10]
+# Layers to modify (0-based). Supports either:
+# - list[int]  (single experiment)
+# - list[list[int]] (multiple experiments; one inner list per experiment)
+# If None, falls back to single LAYER.
+LAYERS = [[27]]
 # Backward compat: if LAYERS is None, use this single layer
-LAYER = 15
+LAYER = 10
 
 # ========== Selection ==========
 # Regimes to evaluate from the datagen CSV (e.g., ["v_output"]).
 REGIMES_TO_USE = ["vii_max_use"]
 
 # Number of prior tokens (before the split) to modify along the direction.
-PRIOR_TOKENS = 1000
+PRIOR_TOKENS = 2
 
 # Ablation mode: 'reflect' (x - 2(x·v)v), 'project_out' (x - (x·v)v), 'push' (x + gamma*v)
 ABLATED_MODE = 'reflect'  # 'reflect' | 'project_out' | 'push'
 # Step size for 'push' mode (in units of the unit-norm v)
 PUSH_GAMMA = 1.0
+
+# ========== Control ablation (random direction) ==========
+# If True, also run a control ablation using a random unit vector per layer
+# with the same hook/mask/mode settings. Results are reported alongside.
+CONTROL_RANDOM_DIR = True
+# Optional seed for reproducible random control vectors; if None, uses RANDOM_STATE
+CONTROL_SEED: int | None = None
+
+# ========== Selective masking (Top-K by attn × |h·v|) ==========
+# If > 0, select only this many tokens among the prior window to modify,
+# per layer and example, based on attention weight (from the same layer,
+# query at last prefix position) multiplied by |h·v| at the hook point.
+# If 0, disable and use the full prior window.
+TOPK_BY_ATTNV = None
+# Aggregation across heads for attention weights: 'mean' | 'max' | 'sum'
+ATTNV_HEAD_AGG = 'mean'
 
 # Number of examples to sample; None for all available after filtering.
 N_SAMPLES: int | None = 300
@@ -67,4 +86,4 @@ FALSE_STRINGS = [" False", " false", "False", "false", "0"]
 # FALSE_STR = "0"
 
 # Random seed for sampling
-RANDOM_STATE = 60
+RANDOM_STATE = 66002

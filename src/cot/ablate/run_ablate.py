@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from typing import List, Tuple, Dict
+import hashlib
 from datetime import datetime
 import re
 
@@ -108,7 +109,11 @@ def _select_rows(df: pd.DataFrame) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def main():
+# Baseline logits cache keyed by a hash of token ids
+_BASELINE_CACHE: Dict[str, np.ndarray] = {}
+
+
+def _run_single():
     ap = argparse.ArgumentParser(description="Ablate learned directions on prior tokens at multiple layers and measure logit shifts")
     ap.add_argument("--n_samples", type=int, default=None)
     args = ap.parse_args()
@@ -251,6 +256,28 @@ def main():
     hook_names = {L: f"blocks.{L}.hook_{hook_point_norm}" for L in layers}
     abl_mode = mode
     gamma = float(getattr(cfg, 'PUSH_GAMMA', 1.0))
+    topk_by_attnv = int(getattr(cfg, 'TOPK_BY_ATTNV', 0) or 0)
+    head_agg = str(getattr(cfg, 'ATTNV_HEAD_AGG', 'mean')).lower()
+    ctrl_enabled: bool = bool(getattr(cfg, 'CONTROL_RANDOM_DIR', False))
+    # Prepare random control vectors per layer if enabled
+    ctrl_vec_map: Dict[int, torch.Tensor] = {}
+    if ctrl_enabled:
+        seed = getattr(cfg, 'CONTROL_SEED', None)
+        if seed is None:
+            seed = int(getattr(cfg, 'RANDOM_STATE', 1234)) + 1001
+        g = torch.Generator(device=str(model.cfg.device))
+        try:
+            g.manual_seed(int(seed))
+        except Exception:
+            g = None  # fall back
+        for L in layers:
+            if g is not None and str(model.cfg.device).startswith("cuda"):
+                r = torch.randn(d_model, device=model.cfg.device, dtype=model.cfg.dtype, generator=g)
+            else:
+                # CPU generator if GPU generator unsupported
+                r = torch.randn(d_model, device=model.cfg.device, dtype=model.cfg.dtype)
+            r = r / r.norm().clamp_min(1e-12)
+            ctrl_vec_map[L] = r
 
     for key in tqdm(sorted(buckets.keys()), desc="Buckets", leave=True):
         group = buckets[key]
@@ -265,14 +292,79 @@ def main():
             B = tokens.shape[0]
             max_L = tokens.shape[1]
 
-            # Duplicate batch: first half baseline (no change), second half ablated
-            tokens2 = torch.cat([tokens, tokens], dim=0)
+            # Build default prior-window mask [B, max_L, 1] where True marks positions to modify
+            pos = torch.arange(max_L, device=tokens.device).unsqueeze(0).expand(B, -1)
+            valid = pos < lens.unsqueeze(1).to(tokens.device)
+            mask_half = (pos >= starts.unsqueeze(1).to(tokens.device)) & valid
+            # Prepare per-layer selective masks if enabled
+            sel_mask_half_per_layer: Dict[int, torch.Tensor] = {L: mask_half for L in layers}
+            if topk_by_attnv > 0:
+                # Prepass to capture attention patterns and baseline residuals per layer
+                capture_attn: Dict[int, torch.Tensor] = {}
+                capture_resid_base: Dict[int, torch.Tensor] = {}
 
-            # Build mask [2B, max_L, 1] where True marks positions to modify
-            pos = torch.arange(max_L, device=tokens2.device).unsqueeze(0).expand(B, -1)
-            valid = pos < lens.unsqueeze(1).to(tokens2.device)
-            mask_half = (pos >= starts.unsqueeze(1).to(tokens2.device)) & valid
-            mask = torch.cat([torch.zeros_like(mask_half), mask_half], dim=0).unsqueeze(-1)
+                pre_hooks = []
+                for L in layers:
+                    def make_pat_hook(Lcur: int):
+                        def pat_hook(pat, hook):
+                            # pat: [B, n_heads, Q, K]
+                            capture_attn[Lcur] = pat.detach()
+                            return pat
+                        return pat_hook
+                    def make_resid_hook(Lcur: int):
+                        def resid_hook(resid, hook):
+                            # resid at hook point for baseline batch
+                            capture_resid_base[Lcur] = resid.detach()
+                            return resid
+                        return resid_hook
+                    pre_hooks.append((f"blocks.{L}.attn.hook_pattern", make_pat_hook(L)))
+                    pre_hooks.append((hook_names[L], make_resid_hook(L)))
+
+                with torch.no_grad():
+                    _ = model.run_with_hooks(tokens, fwd_hooks=pre_hooks)
+
+                # Compute per-layer selection masks using attn×|h·v|
+                for L in layers:
+                    if (L not in capture_attn) or (L not in capture_resid_base):
+                        sel_mask_half_per_layer[L] = mask_half
+                        continue
+                    pat = capture_attn[L]  # [B, H, Q, K]
+                    resid_b = capture_resid_base[L]  # [B, max_L, d]
+                    # Aggregate heads
+                    if head_agg == 'max':
+                        attn_agg = pat.max(dim=1).values  # [B, Q, K]
+                    elif head_agg == 'sum':
+                        attn_agg = pat.sum(dim=1)
+                    else:
+                        attn_agg = pat.mean(dim=1)
+                    # Select query at last valid prefix token per example
+                    q_idx = (lens - 1).to(attn_agg.device)  # [B]
+                    ar_b = torch.arange(B, device=attn_agg.device)
+                    # Gather per-example row: [B, K]
+                    attn_q = attn_agg[ar_b, q_idx, :]
+                    # Compute |h·v| at hook point from baseline resid
+                    v_vec = vec_map[L].to(resid_b.device)
+                    proj_abs = (resid_b @ v_vec).abs()  # [B, max_L]
+                    # Score = attn(q->k) * |h·v|
+                    score = attn_q * proj_abs
+                    # Mask to prior window and valid positions only
+                    score = score.masked_fill(~mask_half, float('-inf'))
+                    # Top-K per example with per-row k limited by valid prior tokens
+                    sel = torch.zeros_like(mask_half)
+                    for j in range(B):
+                        k_j = min(int(topk_by_attnv), int(mask_half[j].sum().item()))
+                        if k_j <= 0:
+                            continue
+                        vals_j, idx_j = torch.topk(score[j], k=k_j)
+                        sel[j, idx_j] = True
+                    sel_mask_half_per_layer[L] = sel
+
+            # Build per-layer full mask [B, max_L, 1]
+            mask_full_per_layer: Dict[int, torch.Tensor] = {}
+            for L in layers:
+                sel_half = sel_mask_half_per_layer[L]
+                mask_full = sel_half.unsqueeze(-1)
+                mask_full_per_layer[L] = mask_full
 
             # Capture dicts per layer
             capture_layer: Dict[int, Dict[str, torch.Tensor]] = {L: {} for L in layers}
@@ -282,13 +374,13 @@ def main():
             for L in layers:
                 v_vec = vec_map[L]  # [d]
 
-                def make_hook(vv: torch.Tensor, Lcur: int):
+                def make_hook(vv: torch.Tensor, Lcur: int, sel_mask_half: torch.Tensor, mask_full: torch.Tensor):
                     def hook_fn(resid, hook):
-                        # resid: [2B, max_L, d] for both resid_pre and resid_post
-                        resid_abl = resid[B:2*B, :, :]
+                        # resid: [B, max_L, d] for both resid_pre and resid_post
+                        resid_abl = resid
                         proj_abl = resid_abl @ vv                   # [B, max_L]
                         norms_abl = resid_abl.norm(dim=-1)          # [B, max_L]
-                        m = mask_half                                # [B, max_L]
+                        m = sel_mask_half                            # [B, max_L]
                         m_f = m.float()
                         counts = m_f.sum(dim=1).clamp_min(1.0)       # [B]
                         mean_proj = (proj_abl * m_f).sum(dim=1) / counts
@@ -316,19 +408,32 @@ def main():
                             new = resid + gamma * vv
                         else:
                             new = resid
-                        return torch.where(mask, new, resid)
+                        return torch.where(mask_full, new, resid)
                     return hook_fn
 
-                fwd_hooks.append((hook_names[L], make_hook(v_vec, L)))
+                fwd_hooks.append((hook_names[L], make_hook(v_vec, L, sel_mask_half_per_layer[L], mask_full_per_layer[L])))
 
+            # Baseline logits at last position: cache across experiments
+            idx = (lens - 1).to(tokens.device)
+            ar = torch.arange(B, device=tokens.device)
+            # Compute cache key
+            tok_cpu = tokens.detach().to('cpu').numpy()
+            h = hashlib.sha1()
+            h.update(str(cfg.MODEL_NAME).encode('utf-8'))
+            h.update(tok_cpu.tobytes())
+            key = h.hexdigest()
+            if key in _BASELINE_CACHE:
+                base_logits_last = torch.from_numpy(_BASELINE_CACHE[key]).to(tokens.device)
+            else:
+                with torch.no_grad():
+                    base_logits_full = model(tokens)
+                base_logits_last = base_logits_full[ar, idx, :]
+                _BASELINE_CACHE[key] = base_logits_last.detach().to('cpu').numpy()
+
+            # Ablated logits for this experiment (single pass with hooks)
             with torch.no_grad():
-                logits2 = model.run_with_hooks(tokens2, fwd_hooks=fwd_hooks)
-
-            # Gather per-example logits at last real position
-            idx = (lens - 1).to(logits2.device)
-            ar = torch.arange(B, device=logits2.device)
-            base_logits_last = logits2[ar, idx, :]
-            abl_logits_last = logits2[ar + B, idx, :]
+                logits_abl = model.run_with_hooks(tokens, fwd_hooks=fwd_hooks)
+            abl_logits_last = logits_abl[ar, idx, :]
 
             # Logits gathered as logsumexp over variant ids for margins
             base_true_lse = torch.logsumexp(base_logits_last[:, true_ids], dim=1)
@@ -366,6 +471,43 @@ def main():
                 (abl_false - base_false).cpu().numpy(),
             )
             flipped = (np.sign(base_margin) != np.sign(abl_margin)).astype(int)
+
+            # Control ablation with random direction (same mask, same mode)
+            if ctrl_enabled:
+                fwd_hooks_ctrl = []
+                for L in layers:
+                    v_ctrl = ctrl_vec_map[L]
+                    def make_hook_ctrl(vv: torch.Tensor, mask_full: torch.Tensor):
+                        def hook_fn(resid, hook):
+                            if abl_mode == 'reflect':
+                                proj = resid @ vv
+                                new = resid - 2.0 * proj.unsqueeze(-1) * vv
+                            elif abl_mode == 'project_out':
+                                proj = resid @ vv
+                                new = resid - proj.unsqueeze(-1) * vv
+                            elif abl_mode == 'push':
+                                new = resid + gamma * vv
+                            else:
+                                new = resid
+                            return torch.where(mask_full, new, resid)
+                        return hook_fn
+                    fwd_hooks_ctrl.append((hook_names[L], make_hook_ctrl(v_ctrl, mask_full_per_layer[L])))
+
+                with torch.no_grad():
+                    logits_ctrl = model.run_with_hooks(tokens, fwd_hooks=fwd_hooks_ctrl)
+
+                ctrl_abl_logits_last = logits_ctrl[ar, idx, :]
+                ctrl_probs_last = torch.softmax(ctrl_abl_logits_last, dim=-1)
+                ctrl_true_lse = torch.logsumexp(ctrl_abl_logits_last[:, true_ids], dim=1)
+                ctrl_false_lse = torch.logsumexp(ctrl_abl_logits_last[:, false_ids], dim=1)
+                ctrl_true = ctrl_true_lse
+                ctrl_false = ctrl_false_lse
+                ctrl_margin_t = (ctrl_true - ctrl_false)
+                ctrl_margin = ctrl_margin_t.cpu().numpy()
+                ctrl_delta_margin = (ctrl_margin - base_margin)
+                ctrl_p_true = ctrl_probs_last[:, true_ids].sum(dim=1).cpu().numpy()
+                ctrl_p_false = ctrl_probs_last[:, false_ids].sum(dim=1).cpu().numpy()
+                ctrl_flipped = (np.sign(base_margin) != np.sign(ctrl_margin)).astype(int)
 
             # Aggregate per-layer "nudge" metrics across layers (simple mean)
             if len(layers) > 0:
@@ -410,6 +552,12 @@ def main():
                     base_p_false=float(base_p_false[j]),
                     abl_p_true=float(abl_p_true[j]),
                     abl_p_false=float(abl_p_false[j]),
+                    ctrl_abl_true=float(ctrl_true[j].item()) if ctrl_enabled else float('nan'),
+                    ctrl_abl_false=float(ctrl_false[j].item()) if ctrl_enabled else float('nan'),
+                    ctrl_margin=float(ctrl_margin[j]) if ctrl_enabled else float('nan'),
+                    ctrl_delta_margin=float(ctrl_delta_margin[j]) if ctrl_enabled else float('nan'),
+                    ctrl_p_true=float(ctrl_p_true[j]) if ctrl_enabled else float('nan'),
+                    ctrl_p_false=float(ctrl_p_false[j]) if ctrl_enabled else float('nan'),
                     # Aggregated nudge metrics across layers (pre-ablation at each layer)
                     mean_hdotv=float(mean_proj[j]),
                     mean_abs_hdotv=float(mean_abs_proj[j]),
@@ -420,6 +568,7 @@ def main():
                     implied_delta_along_v_mag=float(2.0 * mean_abs_proj[j]), # avg across layers
                     implied_frac_change_along_v=float(2.0 * mean_abs_cos[j]),
                     flipped=int(flipped[j]),
+                    ctrl_flipped=int(ctrl_flipped[j]) if ctrl_enabled else 0,
                 ))
 
             global_batch_idx += 1
@@ -452,6 +601,11 @@ def main():
             avg_base_p_false=float(d["base_p_false"].mean()) if len(d) and "base_p_false" in d else float('nan'),
             avg_abl_p_true=float(d["abl_p_true"].mean()) if len(d) and "abl_p_true" in d else float('nan'),
             avg_abl_p_false=float(d["abl_p_false"].mean()) if len(d) and "abl_p_false" in d else float('nan'),
+            # Control summaries (if present)
+            avg_ctrl_delta_margin=float(d["ctrl_delta_margin"].mean()) if len(d) and "ctrl_delta_margin" in d else float('nan'),
+            frac_ctrl_flipped=float(d["ctrl_flipped"].mean()) if len(d) and "ctrl_flipped" in d else float('nan'),
+            avg_ctrl_p_true=float(d["ctrl_p_true"].mean()) if len(d) and "ctrl_p_true" in d else float('nan'),
+            avg_ctrl_p_false=float(d["ctrl_p_false"].mean()) if len(d) and "ctrl_p_false" in d else float('nan'),
             # Nudge summaries (aggregated across layers already)
             avg_mean_abs_hdotv=float(d["mean_abs_hdotv"].mean()) if "mean_abs_hdotv" in d else float('nan'),
             avg_mean_h_norm=float(d["mean_h_norm"].mean()) if "mean_h_norm" in d else float('nan'),
@@ -476,6 +630,10 @@ def main():
     lines.append(f"Regimes: {', '.join(cfg.REGIMES_TO_USE)} | Prior tokens: {cfg.PRIOR_TOKENS}")
     lines.append(f"Mode: {mode}" + (f" (gamma={gamma})" if mode == 'push' else ""))
     lines.append(f"Samples: {len(df_out)} (requested={cfg.N_SAMPLES})")
+    if topk_by_attnv > 0:
+        lines.append(f"Selective mask: topK by attn×|h·v| = {topk_by_attnv} (head_agg={head_agg})")
+    if ctrl_enabled:
+        lines.append(f"Control: random direction enabled (seed={getattr(cfg, 'CONTROL_SEED', None) or getattr(cfg, 'RANDOM_STATE', 1234)+1001})")
     lines.append(f"Low-margin threshold: |base margin| < {low_thr}")
     lines.append("")
     # Tokenization notes (IDs for each provided variant)
@@ -489,7 +647,7 @@ def main():
     def _fmt_summ(title: str, s: Dict[str, float] | None) -> List[str]:
         if s is None:
             return [f"{title}: n=0"]
-        return [
+        lines = [
             f"{title}: n={s['n']}",
             f"  base p(T/F): {s['avg_base_p_true']:.4f} / {s['avg_base_p_false']:.4f}",
             f"  ablated p(T/F): {s['avg_abl_p_true']:.4f} / {s['avg_abl_p_false']:.4f}",
@@ -497,6 +655,10 @@ def main():
             f"  Δmargin (T-F): {s['avg_delta_margin']:.4f} | flipped: {s['frac_flipped']:.3f}",
             f"  nudge |cos|: {s['avg_mean_abs_cos']:.4f} | var(nudge |cos|): {s['avg_var_abs_cos']:.4f} | frac change 2|cos|: {s['avg_implied_frac_change']:.4f}",
         ]
+        if ctrl_enabled:
+            lines.append(f"  control p(T/F): {s['avg_ctrl_p_true']:.4f} / {s['avg_ctrl_p_false']:.4f}")
+            lines.append(f"  control Δmargin (T-F): {s['avg_ctrl_delta_margin']:.4f} | flipped: {s['frac_ctrl_flipped']:.3f}")
+        return lines
 
     lines.extend(_fmt_summ("Overall", all_sum))
     lines.append("")
@@ -509,6 +671,22 @@ def main():
     report_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"Wrote report → {report_path}")
     print(f"Per-example CSV → {per_ex_csv}")
+
+
+def main():
+    # Support cfg.LAYERS as list[list[int]] to run multiple experiments
+    layers_cfg = getattr(cfg, 'LAYERS', None)
+    if layers_cfg is not None and len(layers_cfg) > 0 and isinstance(layers_cfg[0], (list, tuple)):
+        # Run one experiment per inner list by temporarily overriding cfg.LAYERS
+        for exp_idx, layer_list in enumerate(layers_cfg, start=1):
+            try:
+                cfg.LAYERS = list(map(int, layer_list))  # type: ignore[attr-defined]
+            except Exception:
+                cfg.LAYERS = layer_list  # best effort
+            print(f"[INFO] Running ablation experiment {exp_idx} with layers={cfg.LAYERS}")
+            _run_single()
+    else:
+        _run_single()
 
 
 if __name__ == "__main__":

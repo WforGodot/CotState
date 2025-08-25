@@ -6,12 +6,12 @@ PREFERRED_VARS = list("PQRSUVWXYZABCD")
 
 # How many items per regime
 QUESTIONS_PER_REGIME = {
-    "i_initial": 100,
-    "ii_inconsequential": 100,
-    "iii_derived": 100,
-    "iv_indeterminate": 100,
-    "v_output": 100,
-    "vi_single_use": 100,
+    "i_initial": 0,
+    "ii_inconsequential": 10000,
+    "iii_derived": 10000,
+    "iv_indeterminate": 10000,
+    "v_output": 10000,
+    "vi_single_use": 10000,
     "vii_max_use": 10000,
 }
 

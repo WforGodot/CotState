@@ -24,7 +24,7 @@ VECTORS_DIR = Path("../outputs/vectors")
 #   "src/cot/outputs/vectors/L15__off_in_-30..49_n70_31533c49__regs_vii_max_use__Qwen-Qwen3-0.6B/L15_top1.npy"
 # - or relative to VECTORS_DIR as a fallback.
 # Set this to choose which fixed direction/subspace to evaluate.
-VECTOR_FILE = r"src\cot\outputs\vectors\L15__off_-30_to_30__regs_vii_max_use__Qwen-Qwen3-0.6B\L15_top1.npy"
+VECTOR_FILE = r"src\cot\outputs\vectors\run1-scan_all_layers\L20_top1.npy"
 
 # Output directory for reports
 OUT_DIR = Path("../outputs/probes")
@@ -48,7 +48,7 @@ FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
 FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
 # Either an inclusive range tuple (lo, hi) with None for open bounds,
 # or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
-FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (30,40)
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (0,40)
 
 # Explicit train/test split support (collector adds 'split' column)
 TRAIN_SPLIT_NAME = 'train'
