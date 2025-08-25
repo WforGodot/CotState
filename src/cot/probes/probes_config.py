@@ -85,7 +85,7 @@ COL_WIDTHS = dict(layer=6, n=9, comps=7, acc=10, auroc=10, ap=10, f1=10)
 
 # ========== Acceleration ==========
 # DEVICE: 'cpu', 'cuda', or 'auto' (use CUDA if available)
-DEVICE = 'cpu'
+DEVICE = 'cuda'
 # Torch logistic regression hyperparameters when using GPU ('cuda')
 GPU_LR_EPOCHS = 300
 GPU_LR_LR = 0.1
