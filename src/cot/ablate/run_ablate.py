@@ -248,6 +248,13 @@ def _run_single():
 
     pad_id = get_pad_id(model)
     rows_out: List[Dict] = []
+    # Aggregators for top-K non-(True/False) tokens across examples
+    base_other_sum: Dict[int, float] = {}
+    base_other_cnt: Dict[int, int] = {}
+    abl_other_sum: Dict[int, float] = {}
+    abl_other_cnt: Dict[int, int] = {}
+    ctrl_other_sum: Dict[int, float] = {}
+    ctrl_other_cnt: Dict[int, int] = {}
     bs = max(1, int(getattr(cfg, 'BATCH_SIZE', 32)))
     empty_every = int(getattr(cfg, 'EMPTY_CACHE_EVERY_N_BATCHES', 0) or 0)
     global_batch_idx = 0
@@ -453,6 +460,36 @@ def _run_single():
             abl_p_true_t = abl_probs_last[:, true_ids].sum(dim=1)
             abl_p_false_t = abl_probs_last[:, false_ids].sum(dim=1)
 
+            # Top-K non-(True/False) token probabilities for introspection
+            other_k = int(getattr(cfg, 'OTHER_TOPK', 1) or 1)
+            excl_ids = list(dict.fromkeys(list(true_ids) + list(false_ids)))
+            if other_k > 0:
+                mask_excl = torch.zeros_like(base_probs_last, dtype=torch.bool)
+                mask_excl[:, excl_ids] = True
+                base_other = base_probs_last.masked_fill(mask_excl, -1.0)
+                abl_other = abl_probs_last.masked_fill(mask_excl, -1.0)
+                base_top = torch.topk(base_other, k=min(other_k, base_other.shape[1]), dim=-1)
+                abl_top = torch.topk(abl_other, k=min(other_k, abl_other.shape[1]), dim=-1)
+                base_top_idx = base_top.indices.detach().to('cpu').numpy()
+                base_top_val = base_top.values.detach().to('cpu').numpy()
+                abl_top_idx = abl_top.indices.detach().to('cpu').numpy()
+                abl_top_val = abl_top.values.detach().to('cpu').numpy()
+                # Accumulate top other tokens for report
+                for _jj in range(base_top_idx.shape[0]):
+                    for _rr in range(base_top_idx.shape[1]):
+                        _tid = int(base_top_idx[_jj, _rr]); _pv = float(base_top_val[_jj, _rr])
+                        if _pv >= 0.0:
+                            base_other_sum[_tid] = base_other_sum.get(_tid, 0.0) + _pv
+                            base_other_cnt[_tid] = base_other_cnt.get(_tid, 0) + 1
+                for _jj in range(abl_top_idx.shape[0]):
+                    for _rr in range(abl_top_idx.shape[1]):
+                        _tid = int(abl_top_idx[_jj, _rr]); _pv = float(abl_top_val[_jj, _rr])
+                        if _pv >= 0.0:
+                            abl_other_sum[_tid] = abl_other_sum.get(_tid, 0.0) + _pv
+                            abl_other_cnt[_tid] = abl_other_cnt.get(_tid, 0) + 1
+            else:
+                base_top_idx = None; base_top_val = None; abl_top_idx = None; abl_top_val = None
+
             base_margin_t = (base_true - base_false)
             abl_margin_t = (abl_true - abl_false)
             base_margin = base_margin_t.cpu().numpy()
@@ -507,7 +544,23 @@ def _run_single():
                 ctrl_delta_margin = (ctrl_margin - base_margin)
                 ctrl_p_true = ctrl_probs_last[:, true_ids].sum(dim=1).cpu().numpy()
                 ctrl_p_false = ctrl_probs_last[:, false_ids].sum(dim=1).cpu().numpy()
+                # Control: top-K other tokens
+                if other_k > 0:
+                    ctrl_other = ctrl_probs_last.masked_fill(mask_excl, -1.0)
+                    ctrl_top = torch.topk(ctrl_other, k=min(other_k, ctrl_other.shape[1]), dim=-1)
+                    ctrl_top_idx = ctrl_top.indices.detach().to('cpu').numpy()
+                    ctrl_top_val = ctrl_top.values.detach().to('cpu').numpy()
+                else:
+                    ctrl_top_idx = None; ctrl_top_val = None
                 ctrl_flipped = (np.sign(base_margin) != np.sign(ctrl_margin)).astype(int)
+                # Accumulate control top other tokens
+                if other_k > 0 and ctrl_top_idx is not None and ctrl_top_val is not None:
+                    for _jj in range(ctrl_top_idx.shape[0]):
+                        for _rr in range(ctrl_top_idx.shape[1]):
+                            _tid = int(ctrl_top_idx[_jj, _rr]); _pv = float(ctrl_top_val[_jj, _rr])
+                            if _pv >= 0.0:
+                                ctrl_other_sum[_tid] = ctrl_other_sum.get(_tid, 0.0) + _pv
+                                ctrl_other_cnt[_tid] = ctrl_other_cnt.get(_tid, 0) + 1
 
             # Aggregate per-layer "nudge" metrics across layers (simple mean)
             if len(layers) > 0:
@@ -533,6 +586,26 @@ def _run_single():
                 var_abs_cos = np.zeros(B)
 
             for j, ex in enumerate(chunk):
+                # Build printable top-K other tokens strings
+                def _fmt_top(ids_arr, vals_arr):
+                    if ids_arr is None or vals_arr is None:
+                        return "", ""
+                    toks = []
+                    probs = []
+                    for t_id, t_p in zip(list(ids_arr[j]), list(vals_arr[j])):
+                        try:
+                            s = model.to_string(torch.tensor([int(t_id)], device=model.cfg.device))
+                        except Exception:
+                            s = str(int(t_id))
+                        toks.append(s)
+                        probs.append(f"{float(t_p):.6f}")
+                    return "|".join(toks), "|".join(probs)
+                base_other_toks, base_other_probs = _fmt_top(base_top_idx, base_top_val)
+                abl_other_toks, abl_other_probs = _fmt_top(abl_top_idx, abl_top_val)
+                if ctrl_enabled:
+                    ctrl_other_toks, ctrl_other_probs = _fmt_top(ctrl_top_idx, ctrl_top_val)
+                else:
+                    ctrl_other_toks, ctrl_other_probs = "", ""
                 rows_out.append(dict(
                     id=ex["id"],
                     regime=ex["regime"],
@@ -558,6 +631,13 @@ def _run_single():
                     ctrl_delta_margin=float(ctrl_delta_margin[j]) if ctrl_enabled else float('nan'),
                     ctrl_p_true=float(ctrl_p_true[j]) if ctrl_enabled else float('nan'),
                     ctrl_p_false=float(ctrl_p_false[j]) if ctrl_enabled else float('nan'),
+                    # New: top-K non-(T/F) tokens and probs ("|"-joined)
+                    base_other_top_tokens=base_other_toks,
+                    base_other_top_probs=base_other_probs,
+                    abl_other_top_tokens=abl_other_toks,
+                    abl_other_top_probs=abl_other_probs,
+                    ctrl_other_top_tokens=ctrl_other_toks if ctrl_enabled else "",
+                    ctrl_other_top_probs=ctrl_other_probs if ctrl_enabled else "",
                     # Aggregated nudge metrics across layers (pre-ablation at each layer)
                     mean_hdotv=float(mean_proj[j]),
                     mean_abs_hdotv=float(mean_abs_proj[j]),
@@ -642,6 +722,28 @@ def _run_single():
     lines.append(f"True variants (first-token ids): [{true_kv}]" + (" (some multi-token)" if true_multi else ""))
     lines.append(f"False variants (first-token ids): [{false_kv}]" + (" (some multi-token)" if false_multi else ""))
     lines.append("Probabilities use full softmax over vocab; for multiple variants, masses are summed per class.")
+    lines.append("")
+    # Summarize top-'other' tokens across examples
+    def _top_other_lines(title: str, sum_map: Dict[int, float], cnt_map: Dict[int, int], k: int = 5) -> List[str]:
+        if not sum_map:
+            return [f"{title}: (none)"]
+        items = sorted(sum_map.items(), key=lambda x: -x[1])[:k]
+        out = [f"{title}:"]
+        for tid, sprob in items:
+            try:
+                tok_str = model.to_string(torch.tensor([int(tid)], device=model.cfg.device))
+            except Exception:
+                tok_str = str(int(tid))
+            hits = cnt_map.get(tid, 0)
+            avgp = sprob / max(hits, 1)
+            out.append(f"  {tok_str}: sumP={sprob:.4f} | hits={hits} | avgP={avgp:.6f}")
+        return out
+
+    disp_k = max(5, int(getattr(cfg, 'OTHER_TOPK', 1) or 1))
+    lines.extend(_top_other_lines("Top other tokens (baseline)", base_other_sum, base_other_cnt, disp_k))
+    lines.extend(_top_other_lines("Top other tokens (ablated)", abl_other_sum, abl_other_cnt, disp_k))
+    if ctrl_enabled:
+        lines.extend(_top_other_lines("Top other tokens (control)", ctrl_other_sum, ctrl_other_cnt, disp_k))
     lines.append("")
 
     def _fmt_summ(title: str, s: Dict[str, float] | None) -> List[str]:

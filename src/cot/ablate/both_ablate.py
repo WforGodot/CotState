@@ -132,14 +132,19 @@ def _attn_mass_tail_to_regions(
         B_, H, Q, K = pat.shape
         dev = pat.device
         lens_b = lens.to(dev)                       # [B]
-        bpt = torch.minimum(torch.full_like(lens_b, block_first_n), lens_b)  # [B]
         q_last = (lens_b - 1).clamp(min=0)          # [B]
         q_start = torch.clamp(lens_b - int(last_m), min=0)                    # [B]
+        if block_first_n >= 0:
+            bpt = torch.minimum(torch.full_like(lens_b, block_first_n), lens_b)  # [B]
+            cutoff = bpt
+        else:
+            keep = torch.minimum(torch.full_like(lens_b, -block_first_n), lens_b)
+            cutoff = (lens_b - keep).clamp(min=0)
 
         # --- key positions & masks ---
         pos_k = torch.arange(K, device=dev).unsqueeze(0).expand(B_, -1)      # [B,K]
-        firstN_k = (pos_k < bpt.unsqueeze(1))                                 # [B,K]
-        inter_k  = (pos_k >= bpt.unsqueeze(1)) & (pos_k < q_start.unsqueeze(1))  # [B,K]
+        firstN_k = (pos_k < cutoff.unsqueeze(1))                               # [B,K]
+        inter_k  = (pos_k >= cutoff.unsqueeze(1)) & (pos_k < q_start.unsqueeze(1))  # [B,K]
 
         # --- 1) last token -> firstN ---
         # Gather per-example last query row across the Q dimension
@@ -361,6 +366,13 @@ def _run_single():
     topk_by_attnv = int(getattr(cfg, 'TOPK_BY_ATTNV', 0) or 0)
 
     rows_out: List[Dict] = []
+    # Aggregators for top-K non-(True/False) tokens across examples
+    base_other_sum: Dict[int, float] = {}
+    base_other_cnt: Dict[int, int] = {}
+    abl_other_sum: Dict[int, float] = {}
+    abl_other_cnt: Dict[int, int] = {}
+    ctrl_other_sum: Dict[int, float] = {}
+    ctrl_other_cnt: Dict[int, int] = {}
 
     for key in tqdm(sorted(buckets.keys()), desc="Buckets", leave=True):
         group = buckets[key]
@@ -477,10 +489,15 @@ def _run_single():
                 tail_avgs.append(mh_tail_avg)
             attn_tail_avg = torch.stack(tail_avgs, dim=0).mean(dim=0) if len(tail_avgs) else torch.zeros((B, max_L), device=model.cfg.device)
 
-            # Restrict to first-N keys & pick top-K among them (or block all first-N if topk_early==0)
+            # Restrict to first-N keys to block; if N<0, block keys before cutoff = L-keep
             pos_k = torch.arange(max_L, device=model.cfg.device).unsqueeze(0).expand(B, -1)
-            bpt = torch.minimum(torch.full((B,), block_first_n, device=model.cfg.device), lens.to(model.cfg.device))
-            firstN_mask = pos_k < bpt.unsqueeze(1)                                # [B,K]
+            if block_first_n >= 0:
+                bpt = torch.minimum(torch.full((B,), block_first_n, device=model.cfg.device), lens.to(model.cfg.device))
+                firstN_mask = pos_k < bpt.unsqueeze(1)                                # [B,K]
+            else:
+                keep = torch.minimum(torch.full((B,), -block_first_n, device=model.cfg.device), lens.to(model.cfg.device))
+                cutoff = (lens.to(model.cfg.device) - keep).clamp(min=0)
+                firstN_mask = pos_k < cutoff.unsqueeze(1)
             block_k_mask = torch.zeros_like(firstN_mask, dtype=torch.bool)        # [B,K]
             if topk_early > 0:
                 scores = attn_tail_avg.masked_fill(~firstN_mask, float('-inf'))
@@ -543,9 +560,14 @@ def _run_single():
                     B_, H, Q, K = pat.shape
                     dev = pat.device
                     lens_b = lens.to(dev)
-                    bpt = torch.minimum(torch.full_like(lens_b, block_first_n), lens_b)
                     q_start = torch.clamp(lens_b - int(last_m), min=0)
-                    q_start_eff = torch.maximum(q_start, bpt)
+                    if block_first_n >= 0:
+                        bpt = torch.minimum(torch.full_like(lens_b, block_first_n), lens_b)
+                        cutoff = bpt
+                    else:
+                        keep = torch.minimum(torch.full_like(lens_b, -block_first_n), lens_b)
+                        cutoff = (lens_b - keep).clamp(min=0)
+                    q_start_eff = torch.maximum(q_start, cutoff)
 
                     pos = torch.arange(K, device=dev)
                     q_pos = pos.unsqueeze(0).expand(B_, -1)
@@ -561,7 +583,7 @@ def _run_single():
                         upper = (q_pos - 1).unsqueeze(2)
                         k_b = k_pos.unsqueeze(1)
                         relay_block = (k_b >= lower) & (k_b <= upper)
-                        q_after_firstN = (q_pos >= bpt.unsqueeze(1)) & valid_q
+                        q_after_firstN = (q_pos >= cutoff.unsqueeze(1)) & valid_q
                         relay_block = relay_block & q_after_firstN.unsqueeze(2) & valid_k.unsqueeze(1)
                     else:
                         relay_block = torch.zeros((B_, Q, K), dtype=torch.bool, device=dev)
@@ -707,6 +729,36 @@ def _run_single():
             abl_p_true = abl_probs_last[:, true_ids].sum(dim=1).cpu().numpy()
             abl_p_false = abl_probs_last[:, false_ids].sum(dim=1).cpu().numpy()
 
+            # Top-K non-(True/False) token probabilities
+            other_k = int(getattr(cfg, 'OTHER_TOPK', 1) or 1)
+            excl_ids = list(dict.fromkeys(list(true_ids) + list(false_ids)))
+            if other_k > 0:
+                mask_excl = torch.zeros_like(base_probs_last, dtype=torch.bool)
+                mask_excl[:, excl_ids] = True
+                base_other = base_probs_last.masked_fill(mask_excl, -1.0)
+                abl_other = abl_probs_last.masked_fill(mask_excl, -1.0)
+                base_top = torch.topk(base_other, k=min(other_k, base_other.shape[1]), dim=-1)
+                abl_top = torch.topk(abl_other, k=min(other_k, abl_other.shape[1]), dim=-1)
+                base_top_idx = base_top.indices.detach().to('cpu').numpy()
+                base_top_val = base_top.values.detach().to('cpu').numpy()
+                abl_top_idx = abl_top.indices.detach().to('cpu').numpy()
+                abl_top_val = abl_top.values.detach().to('cpu').numpy()
+                # Accumulate for report
+                for _jj in range(base_top_idx.shape[0]):
+                    for _rr in range(base_top_idx.shape[1]):
+                        _tid = int(base_top_idx[_jj, _rr]); _pv = float(base_top_val[_jj, _rr])
+                        if _pv >= 0.0:
+                            base_other_sum[_tid] = base_other_sum.get(_tid, 0.0) + _pv
+                            base_other_cnt[_tid] = base_other_cnt.get(_tid, 0) + 1
+                for _jj in range(abl_top_idx.shape[0]):
+                    for _rr in range(abl_top_idx.shape[1]):
+                        _tid = int(abl_top_idx[_jj, _rr]); _pv = float(abl_top_val[_jj, _rr])
+                        if _pv >= 0.0:
+                            abl_other_sum[_tid] = abl_other_sum.get(_tid, 0.0) + _pv
+                            abl_other_cnt[_tid] = abl_other_cnt.get(_tid, 0) + 1
+            else:
+                base_top_idx = None; base_top_val = None; abl_top_idx = None; abl_top_val = None
+
             base_margin = (base_true_lse - base_false_lse).cpu().numpy()
             abl_margin = (abl_true_lse - abl_false_lse).cpu().numpy()
             delta_margin = (abl_margin - base_margin)
@@ -729,12 +781,29 @@ def _run_single():
                 ctrl_p_true = ctrl_probs_last[:, true_ids].sum(dim=1).cpu().numpy()
                 ctrl_p_false = ctrl_probs_last[:, false_ids].sum(dim=1).cpu().numpy()
                 ctrl_flipped = (np.sign(base_margin) != np.sign(ctrl_margin)).astype(int)
+                # Control: top-K other tokens
+                if other_k > 0:
+                    ctrl_other = ctrl_probs_last.masked_fill(mask_excl, -1.0)
+                    ctrl_top = torch.topk(ctrl_other, k=min(other_k, ctrl_other.shape[1]), dim=-1)
+                    ctrl_top_idx = ctrl_top.indices.detach().to('cpu').numpy()
+                    ctrl_top_val = ctrl_top.values.detach().to('cpu').numpy()
+                else:
+                    ctrl_top_idx = None; ctrl_top_val = None
+                # Accumulate control top other tokens
+                if other_k > 0 and ctrl_top_idx is not None and ctrl_top_val is not None:
+                    for _jj in range(ctrl_top_idx.shape[0]):
+                        for _rr in range(ctrl_top_idx.shape[1]):
+                            _tid = int(ctrl_top_idx[_jj, _rr]); _pv = float(ctrl_top_val[_jj, _rr])
+                            if _pv >= 0.0:
+                                ctrl_other_sum[_tid] = ctrl_other_sum.get(_tid, 0.0) + _pv
+                                ctrl_other_cnt[_tid] = ctrl_other_cnt.get(_tid, 0) + 1
             else:
                 ctrl_margin = np.full(B, np.nan)
                 ctrl_delta_margin = np.full(B, np.nan)
                 ctrl_p_true = np.full(B, np.nan)
                 ctrl_p_false = np.full(B, np.nan)
                 ctrl_flipped = np.zeros(B, dtype=int)
+                ctrl_top_idx = None; ctrl_top_val = None
 
             # Aggregate per-layer nudge metrics across layers (means)
             def agg(name: str) -> np.ndarray:
@@ -751,6 +820,22 @@ def _run_single():
             var_abs_cos = np.maximum(0.0, (mean_abs_cos2 - (mean_abs_cos ** 2)))
 
             for j, ex in enumerate(chunk):
+                def _fmt_top(ids_arr, vals_arr):
+                    if ids_arr is None or vals_arr is None:
+                        return "", ""
+                    toks = []
+                    probs = []
+                    for t_id, t_p in zip(list(ids_arr[j]), list(vals_arr[j])):
+                        try:
+                            s = model.to_string(torch.tensor([int(t_id)], device=model.cfg.device))
+                        except Exception:
+                            s = str(int(t_id))
+                        toks.append(s)
+                        probs.append(f"{float(t_p):.6f}")
+                    return "|".join(toks), "|".join(probs)
+                base_other_toks, base_other_probs = _fmt_top(base_top_idx, base_top_val)
+                abl_other_toks, abl_other_probs = _fmt_top(abl_top_idx, abl_top_val)
+                ctrl_other_toks, ctrl_other_probs = _fmt_top(ctrl_top_idx, ctrl_top_val)
                 rows_out.append(dict(
                     id=ex["id"],
                     regime=ex["regime"],
@@ -777,6 +862,13 @@ def _run_single():
                     ctrl_p_true=float(ctrl_p_true[j]),
                     ctrl_p_false=float(ctrl_p_false[j]),
                     ctrl_flipped=int(ctrl_flipped[j]),
+                    # New: top-K non-(T/F) tokens and probs ("|"-joined)
+                    base_other_top_tokens=base_other_toks,
+                    base_other_top_probs=base_other_probs,
+                    abl_other_top_tokens=abl_other_toks,
+                    abl_other_top_probs=abl_other_probs,
+                    ctrl_other_top_tokens=ctrl_other_toks,
+                    ctrl_other_top_probs=ctrl_other_probs,
                     # attention diagnostics
                     base_attn_last_to_firstN=float(base_last_to_firstN[j]),
                     base_attn_tail_to_firstN=float(base_tail_to_firstN[j]),
@@ -860,7 +952,10 @@ def _run_single():
     lines.append(f"Vectors dir: {vectors_dir}")
     lines.append(f"Dataset: {datagen_csv}")
     lines.append(f"Regimes: {', '.join(cfg.REGIMES_TO_USE)} | Prior tokens: {prior}")
-    lines.append(f"Attention block: first N={block_first_n}, last M queries={last_m}, topkEarly={topk_early}, relay_hops={relay_hops}")
+    if block_first_n >= 0:
+        lines.append(f"Attention block: first N={block_first_n}, last M queries={last_m}, topkEarly={topk_early}, relay_hops={relay_hops}")
+    else:
+        lines.append(f"Attention block: block keys before last K={abs(block_first_n)} tokens, last M queries={last_m}, topkEarly={topk_early}, relay_hops={relay_hops}")
     lines.append(f"Ablation mode: {abl_mode}" + (f" (gamma={gamma})" if abl_mode == 'push' else ""))
     lines.append(f"Samples: {len(df_out)} (requested={cfg.N_SAMPLES})")
     if ctrl_enabled:
@@ -874,6 +969,28 @@ def _run_single():
     lines.append(f"True variants (first-token ids): [{true_kv}]" + (" (some multi-token)" if true_multi else ""))
     lines.append(f"False variants (first-token ids): [{false_kv}]" + (" (some multi-token)" if false_multi else ""))
     lines.append("Probabilities use full softmax over vocab; for multiple variants, masses are summed per class.")
+    lines.append("")
+    # Summarize top-'other' tokens across examples
+    def _top_other_lines(title: str, sum_map: Dict[int, float], cnt_map: Dict[int, int], k: int = 5) -> List[str]:
+        if not sum_map:
+            return [f"{title}: (none)"]
+        items = sorted(sum_map.items(), key=lambda x: -x[1])[:k]
+        out = [f"{title}:"]
+        for tid, sprob in items:
+            try:
+                tok_str = model.to_string(torch.tensor([int(tid)], device=model.cfg.device))
+            except Exception:
+                tok_str = str(int(tid))
+            hits = cnt_map.get(tid, 0)
+            avgp = sprob / max(hits, 1)
+            out.append(f"  {tok_str}: sumP={sprob:.4f} | hits={hits} | avgP={avgp:.6f}")
+        return out
+
+    disp_k = max(5, int(getattr(cfg, 'OTHER_TOPK', 1) or 1))
+    lines.extend(_top_other_lines("Top other tokens (baseline)", base_other_sum, base_other_cnt, disp_k))
+    lines.extend(_top_other_lines("Top other tokens (ablated)", abl_other_sum, abl_other_cnt, disp_k))
+    if ctrl_enabled:
+        lines.extend(_top_other_lines("Top other tokens (control)", ctrl_other_sum, ctrl_other_cnt, disp_k))
     lines.append("")
 
     def _fmt_summ(title: str, s: Dict[str, float] | None) -> List[str]:

@@ -33,8 +33,8 @@ REGIME_SAMPLE_COUNTS = {
     "iii_derived": 0,
     "iv_indeterminate": 0,
     "v_output": 0,
-    "vi_single_use": 0,
-    "vii_max_use": 6000,
+    "vi_single_use": 5000,
+    "vii_max_use": 5000,
 }
 
 # For each regime, choose how many tokens to keep before and after the split.
@@ -45,18 +45,18 @@ REGIME_SAMPLE_COUNTS = {
 TOKENS_AROUND_BY_REGIME = {
     "i_initial": (-40, 40),
     "ii_inconsequential": (-40, 40),
-    "iii_derived": (-40, 40),
+    "iii_derived": (0, 40),
     "iv_indeterminate": (-40, 40),
-    "v_output": (-40, 40),
-    "vi_single_use": (-40, 40),
-    "vii_max_use": (-40, 0),
+    "v_output": (0, 20),
+    "vi_single_use": (-20, 40),
+    "vii_max_use": (-20, 40),
 }
 
 SEED = 124
 
 # Fraction of candidate tokens to sample uniformly at random (per-token)
 # Set to 1.0 to keep all; None to disable sampling. Example: 0.5
-TOKEN_SAMPLE_FRACTION = 1.0
+TOKEN_SAMPLE_FRACTION = 0.1
 
 # Train/test split across examples (entire CoT assigned to one split)
 TRAIN_FRACTION = 0.7   # remainder goes to test

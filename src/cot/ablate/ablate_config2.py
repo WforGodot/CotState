@@ -10,14 +10,14 @@ modify and how the report is produced.
 
 # ========== Paths ==========
 # Relative to the project root (same convention as collect/probes)
-DATAGEN_CSV_REL = Path("cot/outputs/datagen/proplogic_questions.csv")
-OUT_DIR_REL = Path("cot/outputs/ablate")
+DATAGEN_CSV_REL = Path("cot/outputs/datagen2/proplogic_paragraphs.csv")
+OUT_DIR_REL = Path("cot/outputs/ablate2")
 
 # Vector folder containing per-layer direction files (e.g., L15_top1.npy, L14_top1.npy).
 # This path is resolved relative to the project 'src' root (see run_ablate).
 # Example (matches src/cot/outputs/vectors structure):
 #   "cot/outputs/vectors/L15__off_-30_to_30__regs_vii_max_use__Qwen-Qwen3-0.6B"
-VECTORS_DIR_REL = "cot/outputs/vectors/original"
+VECTORS_DIR_REL = "cot/outputs/vectors/flip"
 
 # ========== Model ==========
 MODEL_NAME = "Qwen/Qwen3-0.6B"
@@ -38,13 +38,13 @@ HOOK_POINT = "resid_post"
 # - list[int]  (single experiment)
 # - list[list[int]] (multiple experiments; one inner list per experiment)
 # If None, falls back to single LAYER.
-LAYERS = [[x for x in range(28)]]
+LAYERS = [[x] for x in range(10,20,2)]
 # Backward compat: if LAYERS is None, use this single layer
 LAYER = 10
 
 # ========== Selection ==========
 # Regimes to evaluate from the datagen CSV (e.g., ["v_output"]).
-REGIMES_TO_USE = ["vii_max_use"]
+REGIMES_TO_USE = ["track_p"]
 
 # Number of prior tokens (before the split) to modify along the direction.
 PRIOR_TOKENS = 30

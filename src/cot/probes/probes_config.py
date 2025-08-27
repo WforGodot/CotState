@@ -32,7 +32,7 @@ VECTORS_DIR = Path("../outputs/vectors")
 # outputs (reports, scores, vectors) will be saved under this name instead of
 # the default constructed name. Example: OUTPUT_FILE_NAME = "my_experiment_run".
 # Set to None to keep auto-naming behavior.
-OUTPUT_FILE_NAME: str | None = "original"
+OUTPUT_FILE_NAME: str | None = "all_tokens"
 
 
 # ========== Labels schema ==========
@@ -52,7 +52,7 @@ FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
 FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
 # Either an inclusive range tuple (lo, hi) with None for open bounds,
 # or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
-FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = [-2, -1]
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = None
 
 # Optional random subsample of tokens after filtering; None to use all
 N_TOKENS: int | None = None
