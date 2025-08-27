@@ -17,7 +17,7 @@ OUT_DIR_REL = Path("cot/outputs/ablate")
 # This path is resolved relative to the project 'src' root (see run_ablate).
 # Example (matches src/cot/outputs/vectors structure):
 #   "cot/outputs/vectors/L15__off_-30_to_30__regs_vii_max_use__Qwen-Qwen3-0.6B"
-VECTORS_DIR_REL = "cot/outputs/vectors/run1-scan_all_layers"
+VECTORS_DIR_REL = "cot/outputs/vectors/original"
 
 # ========== Model ==========
 MODEL_NAME = "Qwen/Qwen3-0.6B"
@@ -38,7 +38,7 @@ HOOK_POINT = "resid_post"
 # - list[int]  (single experiment)
 # - list[list[int]] (multiple experiments; one inner list per experiment)
 # If None, falls back to single LAYER.
-LAYERS = [[27]]
+LAYERS = [[x for x in range(28)]]
 # Backward compat: if LAYERS is None, use this single layer
 LAYER = 10
 
@@ -47,7 +47,7 @@ LAYER = 10
 REGIMES_TO_USE = ["vii_max_use"]
 
 # Number of prior tokens (before the split) to modify along the direction.
-PRIOR_TOKENS = 2
+PRIOR_TOKENS = 30
 
 # Ablation mode: 'reflect' (x - 2(x·v)v), 'project_out' (x - (x·v)v), 'push' (x + gamma*v)
 ABLATED_MODE = 'reflect'  # 'reflect' | 'project_out' | 'push'
@@ -86,4 +86,13 @@ FALSE_STRINGS = [" False", " false", "False", "false", "0"]
 # FALSE_STR = "0"
 
 # Random seed for sampling
-RANDOM_STATE = 66002
+RANDOM_STATE = 602
+
+ATTN_BLOCK_PREFIX_TOKENS: int | None = 20
+ATTN_BLOCK_QUERY_LAST_M: int | None = 10
+
+TOPK_EARLY = 0  # 0 = block all first N (current behavior). Try 1,3,5.
+
+# Also block within-tail relays: for tail queries q, zero attention to keys k in [q-R, q-1].
+# 0 = off. Try 1 or 2.
+BLOCK_TAIL_RELAY_HOPS = 1

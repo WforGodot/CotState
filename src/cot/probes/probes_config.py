@@ -11,7 +11,7 @@ settings used by the two scripts for clarity.
 
 # ========== Paths ==========
 # Activation features NPZ (relative to this file)
-ACTS_NPZ = Path("../outputs/collect/resid_post_qwen3_collect.npz")
+ACTS_NPZ = Path("../outputs1/collect/resid_post_qwen3_collect.npz")
 # Labels CSV path; if None, inferred from ACTS_NPZ by replacing suffix
 LABELS_CSV = None
 
@@ -20,7 +20,7 @@ LABELS_CSV = None
 HOOK_POINT_PREFIX = "acts_resid_post_layer"
 
 # Optionally restrict which layers to train/evaluate (list of ints) or None for all
-LAYERS_TO_TRAIN: list[int] | None = None
+LAYERS_TO_TRAIN: list[int] | None = list(range(10,20,2))
 
 # ========== Output ==========
 # Probe reports and scores are written under this directory
@@ -32,7 +32,7 @@ VECTORS_DIR = Path("../outputs/vectors")
 # outputs (reports, scores, vectors) will be saved under this name instead of
 # the default constructed name. Example: OUTPUT_FILE_NAME = "my_experiment_run".
 # Set to None to keep auto-naming behavior.
-OUTPUT_FILE_NAME: str | None = "run1-scan_all_layers"
+OUTPUT_FILE_NAME: str | None = "original"
 
 
 # ========== Labels schema ==========
@@ -45,17 +45,17 @@ OFFSET_COL = "offset_from_split"  # token offset relative to split
 # ========== Data selection ==========
 # Restrict which regimes to use (list of names) or None for all
 # Choose from ["i_initial", "ii_inconsequential", "iii_derived", "iv_indeterminate", "v_output", "vi_single_use", "vii_max_use"]
-REGIMES_TO_USE: list[str] | None = ["vii_max_use"]
+REGIMES_TO_USE: list[str] | None = None
 
 # Offset filters (applied to OFFSET_COL)
 FILTER_OFFSET_EQ = None      # exactly equal to this offset, or None
 FILTER_OFFSET_MAX = None     # include offsets <= this value, or None
 # Either an inclusive range tuple (lo, hi) with None for open bounds,
 # or a list of explicit offsets to whitelist (e.g., [0,2,4,6,8])
-FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = (-40, 0)
+FILTER_OFFSET_RANGE: tuple[int | None, int | None] | list[int] | None = [-2, -1]
 
 # Optional random subsample of tokens after filtering; None to use all
-N_TOKENS: int | None = 10000
+N_TOKENS: int | None = None
 
 # ========== Model / probe ==========
 # One of: 'rank1' (k=1) or 'lowrank' (k>1)
@@ -85,7 +85,7 @@ COL_WIDTHS = dict(layer=6, n=9, comps=7, acc=10, auroc=10, ap=10, f1=10)
 
 # ========== Acceleration ==========
 # DEVICE: 'cpu', 'cuda', or 'auto' (use CUDA if available)
-DEVICE = 'cuda'
+DEVICE = 'cpu'
 # Torch logistic regression hyperparameters when using GPU ('cuda')
 GPU_LR_EPOCHS = 300
 GPU_LR_LR = 0.1

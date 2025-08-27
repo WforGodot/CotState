@@ -628,6 +628,8 @@ def main():
         d_model = X.shape[1]
 
         pipe = _build_pipeline(d_model)
+        # For N_SPLITS=0, keep the fitted pipeline to avoid re-training later
+        pipe_for_vectors: Optional[Pipeline] = None
 
         fold_metrics: List[Dict[str, float]] = []
         oof_pred = np.empty_like(y)
@@ -659,6 +661,9 @@ def main():
 
             # Pass contrast ids to the subspace step so multi-contrast LDA (k>1) can fit
             pipe.fit(X_tr, y_tr, **{"subspace__contrast_ids": contrast_ids_tr})
+            if not (n_splits and n_splits > 0):
+                # CV=0 (train→test): reuse this trained pipeline for saving vectors later
+                pipe_for_vectors = pipe
 
             if ncomp_for_layer is None:
                 if 'pca' in pipe.named_steps:
@@ -796,16 +801,21 @@ def main():
         # Save learned vectors (rank1/lowrank) trained on all data (CV) or train-only (train→test)
         try:
             if str(cfg.CLASSIFIER).lower() in {"rank1", "lowrank"}:
-                pipe_full = _build_pipeline(d_model)
-                if n_splits and n_splits>0:
+                if n_splits and n_splits > 0:
+                    # CV>0: fit once on all data for exporting vectors
+                    pipe_full = _build_pipeline(d_model)
                     contrast_ids_all = _build_contrast_ids(df)
                     pipe_full.fit(X, y, subspace__contrast_ids=contrast_ids_all)
+                    steps_full = pipe_full.named_steps
                 else:
-                    tr0, _te0 = base_splits[0]
-                    contrast_ids_tr0 = _build_contrast_ids(df.iloc[tr0])
-                    pipe_full.fit(X[tr0], y[tr0], subspace__contrast_ids=contrast_ids_tr0)
-
-                steps_full = pipe_full.named_steps
+                    # CV=0: reuse the already-fitted pipeline from the single train fold
+                    if pipe_for_vectors is None:
+                        # Fallback safety: if missing (should not happen), fit once on train split
+                        tr0, _te0 = base_splits[0]
+                        pipe_for_vectors = _build_pipeline(d_model)
+                        contrast_ids_tr0 = _build_contrast_ids(df.iloc[tr0])
+                        pipe_for_vectors.fit(X[tr0], y[tr0], subspace__contrast_ids=contrast_ids_tr0)
+                    steps_full = pipe_for_vectors.named_steps
                 if 'subspace' in steps_full:
                     scaler: StandardScaler = steps_full['scale']  # type: ignore
                     sub: SupervisedSubspace = steps_full['subspace']  # type: ignore

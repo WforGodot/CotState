@@ -1,9 +1,11 @@
+#collect_config.py
+
 from __future__ import annotations
 
 # -----------------------------
 # Model & runtime configuration
 # -----------------------------
-MODEL_NAME = "Qwen/Qwen3-8B"
+MODEL_NAME = "Qwen/Qwen3-0.6B"
 TRUST_REMOTE_CODE = True
 
 DEVICE = "cuda"
@@ -20,7 +22,7 @@ EMPTY_CACHE_EVERY_N_BATCHES = 8
 # What to collect
 # -----------------------------
 HOOK_POINT = "resid_post"       # e.g., resid_pre|resid_mid|resid_post|mlp_post|attn_out|attn_pattern
-LAYERS = list(range(0, 50))  # which layers to collect (list of ints)
+LAYERS = list(range(10, 20, 2))  # which layers to collect (list of ints)
 
 # -----------------------------
 # Sampling / selection controls
@@ -32,7 +34,7 @@ REGIME_SAMPLE_COUNTS = {
     "iv_indeterminate": 0,
     "v_output": 0,
     "vi_single_use": 0,
-    "vii_max_use": 8000,
+    "vii_max_use": 6000,
 }
 
 # For each regime, choose how many tokens to keep before and after the split.
@@ -47,18 +49,18 @@ TOKENS_AROUND_BY_REGIME = {
     "iv_indeterminate": (-40, 40),
     "v_output": (-40, 40),
     "vi_single_use": (-40, 40),
-    "vii_max_use": (-40, 40),
+    "vii_max_use": (-40, 0),
 }
 
 SEED = 124
 
 # Fraction of candidate tokens to sample uniformly at random (per-token)
 # Set to 1.0 to keep all; None to disable sampling. Example: 0.5
-TOKEN_SAMPLE_FRACTION = 0.1
+TOKEN_SAMPLE_FRACTION = 1.0
 
 # Train/test split across examples (entire CoT assigned to one split)
 TRAIN_FRACTION = 0.7   # remainder goes to test
-SPLIT_SEED = 100
+SPLIT_SEED = 199
 
 # -----------------------------
 # I/O (relative to repo/src/)

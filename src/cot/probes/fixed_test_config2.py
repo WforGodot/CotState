@@ -11,10 +11,10 @@ apply simple filters, and format outputs.
 
 # ========== Paths ==========
 # Activation features NPZ (relative to this file)
-ACTS_NPZ = Path("../outputs/collect2/resid_post_qwen3_collect.npz")
+ACTS_NPZ = Path("../outputs/collect2/resid_post_qwen3_collect_paragraphs.npz")
 
 # Labels CSV path; if None, inferred from ACTS_NPZ ("*_labels.csv" alongside)
-LABELS_CSV = None
+LABELS_CSV = Path("../outputs/collect2/resid_post_qwen3_collect_paragraphs_labels.csv")
 
 # Saved vectors location base (run subfolders under here)
 VECTORS_DIR = Path("../outputs/vectors")
@@ -24,7 +24,7 @@ VECTORS_DIR = Path("../outputs/vectors")
 #   "src/cot/outputs/vectors/L15__off_in_-30..49_n70_31533c49__regs_vii_max_use__Qwen-Qwen3-0.6B/L15_top1.npy"
 # - or relative to VECTORS_DIR as a fallback.
 # Set this to choose which fixed direction/subspace to evaluate.
-VECTOR_FILE = r"src\cot\outputs\vectors\original\L10_top1.npy"
+VECTOR_FILE = r"src\cot\outputs1\vectors\all_layers\L15_top1.npy"
 
 # Output directory for reports
 OUT_DIR = Path("../outputs/probes")
@@ -33,11 +33,11 @@ OUT_DIR = Path("../outputs/probes")
 # Prefix for NPZ keys, e.g., acts_resid_post_layer12
 HOOK_POINT_PREFIX = "acts_resid_post_layer"
 
-# ========== Labels schema ==========
-TARGET_COL = "p_value"       # e.g., "True"/"False" strings
-POSITIVE_TOKEN = "true"      # positive class (case-insensitive match in TARGET_COL)
+# labels & splits
+TARGET_COL = "p_label"                        # <-- was 'p_value'
+POSITIVE_TOKEN = "1"                          # 1 = True
 REGIME_COL = "regime"
-OFFSET_COL = "offset_from_split"  # token offset relative to split
+OFFSET_COL = "token_index_in_seq"             # tokens are indexed in the full sequence
 
 # ========== Data selection (optional) ==========
 # Restrict which regimes to use (list of names) or None for all

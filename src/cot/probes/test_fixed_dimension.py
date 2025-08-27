@@ -114,6 +114,14 @@ def _infer_labels_csv(npz_path: Path) -> Path | None:
 
 def _read_labels(labels_csv: Path) -> pd.DataFrame:
     df = pd.read_csv(labels_csv)
+
+    # --- NEW: optionally drop undefined labels (e.g., p_label == 2) ---
+    drop_vals = set(str(x).lower() for x in getattr(cfg, 'EXCLUDE_TARGET_VALUES', []))
+    if drop_vals:
+        targ_series = df[cfg.TARGET_COL].astype(str).str.strip().str.lower()
+        df = df[~targ_series.isin(drop_vals)]
+    # ------------------------------------------------------------------
+
     y_raw = df[cfg.TARGET_COL].astype(str).str.strip().str.lower()
     df["_y"] = (y_raw == cfg.POSITIVE_TOKEN.lower()).astype(int)
 
