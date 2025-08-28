@@ -26,7 +26,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.cross_decomposition import PLSRegression
 
-import probes_config as cfg
+import probes_config2 as cfg
 
 # Optional torch for GPU-accelerated logistic regression on projections
 try:

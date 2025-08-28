@@ -22,7 +22,7 @@ EMPTY_CACHE_EVERY_N_BATCHES = 8
 # What to collect
 # -----------------------------
 HOOK_POINT = "resid_post"       # e.g., resid_pre|resid_mid|resid_post|mlp_post|attn_out|attn_pattern
-LAYERS = list(range(0, 50))     # which layers to collect (list of ints)
+LAYERS = list(range(10,20,2))     # which layers to collect (list of ints)
 
 # -----------------------------
 # Sampling / selection controls
@@ -36,9 +36,8 @@ SPLIT_SEED = 100
 TOKEN_SAMPLE_FRACTION = 0.1
 
 # Limit how many examples to read per regime (useful if your CSV is huge).
-# The datagen2 writer uses a single regime "track_p".
 REGIME_SAMPLE_COUNTS = {
-    "track_p": 8000,  # or fewer if you want a subset
+    "invert": 8000,  # or fewer if you want a subset
 }
 
 SEED = 124  # for any per-run randomness (not tokenizer-related)

@@ -1,17 +1,24 @@
-# src/cot/datagen/datagen2_config.py
-
 # Variables to sample from (must include 'P')
 PREFERRED_VARS = list("PQRSUVWXABC")
 
-# Total number of items to generate
-N_ITEMS = 5000
+# Regimes to generate.
+# - "explicit":            track P; P changes are "Change P to True/False."
+# - "invert":              track P; P changes are "Change P to not P." / "Invert P."
+# - "track_other":         track some other var X≠P; final sentence still says "P is ...".
+# - "invert_track_other":  same as above, but P changes use inversion phrasing.
+REGIMES = ["explicit", "invert", "track_other", "invert_track_other"]
+
+# How many items PER regime (total = len(REGIMES) * N_ITEMS_PER_REGIME)
+N_ITEMS_PER_REGIME = 5000
+
+# (Kept for backward compatibility; ignored if REGIMES is set)
+N_ITEMS = 20000
 
 # How many non-P variables to mention initially (inclusive range)
 NON_P_INITIAL_VARS = (3, 3)
 
 # How many change sentences overall (inclusive range).
-# A fraction of these will target P (see P_CHANGE_FRAC).
-NUM_CHANGES = (3, 8)
+NUM_CHANGES = (3, 4)
 
 # Fraction of change sentences that affect P (approximate)
 P_CHANGE_FRAC = 0.5
